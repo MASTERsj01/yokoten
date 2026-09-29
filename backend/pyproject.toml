@@ -1,0 +1,66 @@
+[project]
+name = "yokoten"
+version = "0.1.0"
+description = "AI knowledge copilot for engineering lessons learned (RAG over a synthetic Tier-1 automotive corpus)"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "fastapi>=0.142",
+    "uvicorn>=0.54",
+    "python-multipart>=0.0.32",
+    "sqlmodel>=0.0.47",
+    "pydantic-settings>=2.15",
+    "langchain>=1.4",
+    "langchain-core>=1.6",
+    "langchain-text-splitters>=1.1",
+    "langchain-groq>=1.1",
+    "langchain-google-genai>=4.4",
+    "langchain-ollama>=1.1",
+    "torch>=2.8",
+    "transformers>=5.0",
+    "sentence-transformers>=6.0",
+    "faiss-cpu>=1.12",
+    "chromadb>=1.5",
+    "rank-bm25>=0.2.2",
+    "pymupdf>=1.26",
+    "pdfplumber>=0.11",
+    "python-docx>=1.2",
+    "openpyxl>=3.1",
+    "pandas>=2.2",
+    "opencv-python-headless>=4.12",
+    "pytesseract>=0.3.13",
+    "easyocr>=1.7.2",
+    "pillow>=11",
+    "matplotlib>=3.10",
+    "numpy>=2",
+]
+
+[project.scripts]
+yokoten = "yokoten.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=9", "ruff>=0.16", "httpx>=0.28"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# CPU torch everywhere except macOS (PyPI Linux wheels pull ~3 GB of CUDA libs).
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

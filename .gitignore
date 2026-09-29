@@ -1,0 +1,30 @@
+# Secrets
+.env
+
+# Confidential (JD-derived) - local only
+docs/PROJECT_BRIEF.md
+docs/SETUP_ANSWERS.md
+
+# Runtime state (SQLite, indexes, renders, uploads, LLM cache)
+var/
+
+# Generated corpus (reproducible: .\tasks.ps1 data)
+data/corpus/
+data/public/raw/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

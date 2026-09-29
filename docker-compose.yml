@@ -1,0 +1,29 @@
+# docker compose up --build            -> backend + frontend (Groq/Gemini via .env)
+# docker compose --profile ollama up   -> also a local Ollama server
+services:
+  backend:
+    build: { context: ., dockerfile: backend/Dockerfile }
+    env_file: .env
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - HF_HOME=/app/var/hf
+    ports: ["8000:8000"]
+    volumes: ["yokoten-var:/app/var"]
+    mem_limit: 6g
+
+  frontend:
+    build:
+      context: frontend
+      args: { NEXT_PUBLIC_API_URL: "http://localhost:8000" }
+    ports: ["3000:3000"]
+    depends_on: [backend]
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    ports: ["11434:11434"]
+    volumes: ["ollama:/root/.ollama"]
+
+volumes:
+  yokoten-var:
+  ollama:

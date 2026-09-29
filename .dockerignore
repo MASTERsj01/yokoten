@@ -1,0 +1,9 @@
+**/.venv
+**/node_modules
+**/.next
+**/__pycache__
+var
+.env
+.git
+docs/PROJECT_BRIEF.md
+docs/SETUP_ANSWERS.md

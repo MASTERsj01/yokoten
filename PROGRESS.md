@@ -1,0 +1,22 @@
+# Progress
+
+Single source of truth for resuming. Current phase: **P1 Data** (next).
+
+- [x] Questions asked and answered (docs/SETUP_ANSWERS.md)
+- [x] Project folder, git init, local identity, .gitignore, .env / .env.example
+- [x] Plan written to docs/ARCHITECTURE.md (approval step skipped per autonomy rules)
+- [x] P0 Setup — uv backend (FastAPI /api/health + test), Next.js 16 + shadcn shell (nav, dark mode, backend status), tasks.ps1, CI, Dockerfiles + compose, docs skeleton
+- [ ] P1 Data — corpus generator, golden set, manifest
+- [ ] P2 Ingestion
+- [ ] P3 RAG core
+- [ ] P4 Website
+- [ ] P5 Evaluation
+- [ ] P5b NHTSA recalls collection (approved licence: US public domain)
+- [ ] P6 Next-level (K text-to-SQL → N access control → M SME verification)
+- [ ] P7 Polish & ship
+
+## Next step
+Start P1: `backend/yokoten/datagen/`.
+
+## Half-finished work
+None.
