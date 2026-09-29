@@ -191,9 +191,8 @@ def _throttle(provider: str) -> None:
 
 
 def _text(chunk) -> str:
-    t = getattr(chunk, "text", "")
-    t = t() if callable(t) else t
-    return t if isinstance(t, str) else str(chunk.content)
+    t = getattr(chunk, "text", None)  # langchain-core 1.x: str-like accessor over text content blocks
+    return str(t) if isinstance(t, str) else str(chunk.content)
 
 
 @dataclass

@@ -20,3 +20,5 @@ Context passages:
 {context}
 
 Question: {question}
+
+Answer (end every factual sentence with its citation, e.g. [1]):

@@ -35,3 +35,7 @@ Backend alone: `cd backend; uv run --no-sync uvicorn yokoten.api:app --reload`. 
 - Use `import pymupdf` (not `fitz`).
 - To verify servers from the shell, use Git Bash background processes + curl, then kill listeners on ports 8000/3000.
 - Ruff line length is 110.
+- Bash tool: backslash escapes inside heredoc'd Python (e.g. "\n" in replacement strings) can arrive as real newlines - use the Edit tool for code containing escapes.
+- Tests use an isolated VAR_DIR (tests/conftest.py); test_e2e ingests a ~40-doc subset (no NER/OCR). The LLM answer test is skipped unless GROQ_API_KEY or YOKOTEN_TEST_LLM=local.
+- No API keys yet: llm.resolve() falls back groq -> gemini -> ollama -> local (Qwen2.5-1.5B on CPU, ~20-60 s/answer, rarely cites). Warm local model: `yokoten ask "..." --provider local`.
+- Background ingest: run python with output redirected; use `python -u` or check SQLite `document.status` for progress (stdout is buffered).
