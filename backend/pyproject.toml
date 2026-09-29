@@ -32,6 +32,7 @@ dependencies = [
     "pillow>=11",
     "matplotlib>=3.10",
     "numpy>=2",
+    "langchain-huggingface>=1.2",
 ]
 
 [project.scripts]

@@ -12,23 +12,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from yokoten.datagen.world import COMPANY
+from yokoten.domain import DOC_TYPE_LABEL
 
 FIXED_DATE = datetime(2025, 1, 1)
-DOC_TYPE_LABEL = {
-    "8d": "8D Problem-Solving Report",
-    "lessons_learned": "Lessons Learned Report",
-    "field_failure": "Field Failure Analysis",
-    "test_report": "Test Report",
-    "dfmea": "Design FMEA",
-    "pfmea": "Process FMEA",
-    "dvpr": "DVP&R",
-    "design_review": "Design Review Minutes",
-    "ecn": "Engineering Change Notice",
-    "supplier_quality": "Supplier Quality Report",
-    "work_instruction": "Work Instruction",
-    "drawing": "Engineering Drawing",
-    "inspection_record": "Incoming Inspection Record",
-}
 
 
 @dataclass

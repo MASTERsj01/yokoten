@@ -25,10 +25,16 @@ class Settings(BaseSettings):
     demo_mode: bool = False  # read-only + rate limited (public deployment)
     rate_limit_per_min: int = 20
     max_upload_mb: int = 20
+    ocr_engine: str = "auto"  # auto (tesseract if installed, else easyocr) | tesseract | easyocr
 
     @property
     def corpus_dir(self) -> Path:
         return self.data_dir / "corpus"
+
+    @property
+    def cache_dir(self) -> Path:
+        """Large model caches (EasyOCR, ...) live next to HF_HOME when it is set (e.g. on D:)."""
+        return Path(self.hf_home).parent if self.hf_home else self.var_dir / "cache"
 
     @property
     def db_url(self) -> str:
@@ -41,12 +47,13 @@ settings.var_dir.mkdir(parents=True, exist_ok=True)
 if settings.hf_home:
     os.environ.setdefault("HF_HOME", settings.hf_home)
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 
 class RuntimeConfig(BaseModel):
     """Everything the Settings page and the eval ablations can change."""
 
-    llm_provider: Literal["groq", "gemini", "ollama"] = "groq"
+    llm_provider: Literal["groq", "gemini", "ollama", "local"] = "groq"
     llm_model: str = ""  # empty = provider default
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     chunking: Literal["fixed", "recursive", "structure", "parent_child"] = "parent_child"
@@ -57,8 +64,11 @@ class RuntimeConfig(BaseModel):
     top_k: int = 6
     candidates: int = 30
     query_rewrite: bool = True
+    use_filters: bool = True
     prompt_version: str = "v2"
     abstain_threshold: float = 0.2  # min sigmoid(rerank score) of best chunk; calibrated on the dev split
+    abstain_threshold_dense: float = 0.55  # used when the reranker is off (top cosine similarity)
+    collections: list[str] = ["engineering"]
 
 
 RUNTIME_FILE = settings.var_dir / "runtime.json"
