@@ -1,6 +1,6 @@
 # Progress
 
-Single source of truth for resuming. Current phase: **P1 Data** (next).
+Single source of truth for resuming. Current phase: **P2 Ingestion** (next).
 
 - [x] Questions asked and answered (docs/SETUP_ANSWERS.md)
 - [x] Project folder, git init, local identity, .gitignore, .env / .env.example
@@ -16,7 +16,7 @@ Single source of truth for resuming. Current phase: **P1 Data** (next).
 - [ ] P7 Polish & ship
 
 ## Next step
-Start P1: `backend/yokoten/datagen/`.
+Start P2: `backend/yokoten/ingest/` (loaders, OCR, chunkers, entities) + `retrieval/` (embeddings, FAISS/Chroma, BM25) + db.py.
 
 ## Half-finished work
 None.
