@@ -39,3 +39,8 @@ Backend alone: `cd backend; uv run --no-sync uvicorn yokoten.api:app --reload`. 
 - Tests use an isolated VAR_DIR (tests/conftest.py); test_e2e ingests a ~40-doc subset (no NER/OCR). The LLM answer test is skipped unless GROQ_API_KEY or YOKOTEN_TEST_LLM=local.
 - No API keys yet: llm.resolve() falls back groq -> gemini -> ollama -> local (Qwen2.5-1.5B on CPU, ~20-60 s/answer, rarely cites). Warm local model: `yokoten ask "..." --provider local`.
 - Background ingest: run python with output redirected; use `python -u` or check SQLite `document.status` for progress (stdout is buffered).
+- Stop servers with PowerShell (`Get-NetTCPConnection -LocalPort 3000 -State Listen | % { Stop-Process -Id $_.OwningProcess -Force }`); `taskkill` from Git Bash fails silently and a stale `next start` then serves old chunks (page never hydrates).
+- UI verification: build + `npm run start`, backend on :8000, then `cd backend; uv run --no-project --with playwright python ../scripts/ui_drive.py <out_dir> < steps` (drives installed Chrome; prints console/page errors). CORS only allows :3000.
+- Eval: `.	asks.ps1 eval --gen-limit 40` (~3 h on CPU with the local LLM). Ablation summaries cached in var/eval_cache (key includes index_version), LLM calls cached in SQLite `llmcache` - reruns are cheap. `--report-only` re-renders docs/EVALUATION_REPORT.md + README results block from eval/results/latest.json.
+- Indexes are per (chunking, embedding model, collection set); NHTSA recalls live in collection `public_recalls` (`.	asks.ps1 public`).
+- Never edit prompt files while an eval is running (they are read at call time).

@@ -160,7 +160,7 @@ function TraceBody({ traceId }: { traceId: string }) {
 
           <section className="space-y-2">
             <h3 className="font-medium">
-              Faithfulness check (NLI)
+              Faithfulness check (NLI + lexical/number support)
               {trace.data.verification.faithfulness != null &&
                 ` · ${Math.round(trace.data.verification.faithfulness * 100)}% of sentences supported`}
             </h3>
@@ -176,8 +176,11 @@ function TraceBody({ traceId }: { traceId: string }) {
                     <XIcon className="text-destructive mt-0.5 size-4 shrink-0" aria-label="not supported" />
                   )}
                   <span className="flex-1">{s.text}</span>
-                  <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                    entail {Math.round(s.entailment * 100)}%
+                  <span className="text-muted-foreground shrink-0 text-right text-xs tabular-nums">
+                    NLI {Math.round(s.entailment * 100)}%
+                    {s.lexical != null && ` · words ${Math.round(s.lexical * 100)}%`}
+                    {s.numbers_ok === false && " · number not in source"}
+                    {s.method && <div>via {s.method === "nli" ? "entailment" : "lexical + numbers"}</div>}
                   </span>
                 </li>
               ))}

@@ -89,7 +89,20 @@ Built for an internship on an AI chatbot for engineering knowledge management. T
 ## Results
 
 <!-- results:start -->
-Not yet measured — run `.\tasks.ps1 eval`.
+
+| Metric (test split) | Value |
+|---|---|
+| Retrieval Recall@5 | 98.4% |
+| MRR | 93.2% |
+| Answer correctness | 71.5% |
+| Faithfulness (NLI) | 48.0% |
+| Abstention recall | 50.0% |
+| Hallucination rate | 52.6% |
+| Retrieval p50 latency | 1.40 s |
+| Answer p50 latency | 1.96 s |
+
+Run `20260930-031702` · 78 test questions · retrieval config `hybrid / fixed / bge-small-en-v1.5 / rerank on`. Generation: `local/Qwen/Qwen2.5-1.5B-Instruct` on 40 stratified test questions. Full details: [docs/EVALUATION_REPORT.md](docs/EVALUATION_REPORT.md).
+
 <!-- results:end -->
 
 ## Quickstart

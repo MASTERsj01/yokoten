@@ -109,15 +109,33 @@ ABLATIONS: list[tuple[str, list[tuple[str, dict]]]] = [
 ]
 
 
+RETRIEVAL_FIELDS = {
+    "embedding_model",
+    "chunking",
+    "vector_store",
+    "faiss_index",
+    "retrieval_mode",
+    "reranker",
+    "top_k",
+    "candidates",
+    "query_rewrite",
+    "use_filters",
+    "abstain_threshold",
+    "abstain_threshold_dense",
+    "collections",
+}
+
+
 def _cached_summary(cfg: RuntimeConfig, questions: list[dict]) -> dict:
     """Retrieval summaries are cached per (config, question set, index version) so reruns only redo what changed."""
     import hashlib
 
     from yokoten.retrieval.index import index_version
 
+    retrieval_cfg = cfg.model_dump(include=RETRIEVAL_FIELDS)  # LLM / prompt settings do not affect retrieval
     key = hashlib.sha256(
         json.dumps(
-            [cfg.model_dump(), [q["id"] for q in questions], index_version(), GOLDEN.stat().st_mtime],
+            [retrieval_cfg, [q["id"] for q in questions], index_version(), GOLDEN.stat().st_mtime],
             sort_keys=True,
         ).encode()
     ).hexdigest()[:24]
@@ -288,6 +306,105 @@ def stratified(questions: list[dict], limit: int | None) -> list[dict]:
                 out.append(by_cat[cat][i])
         i += 1
     return out
+
+
+# ------------------------------------------------------------------ checker validation + latency benchmark
+def validate_nli(log=print, n: int = 40, seed: int = 1) -> dict:
+    """How trustworthy is the faithfulness checker? Known-true claims (reference answers vs their gold documents) and
+    known-false claims (another question's reference answer vs the same documents)."""
+    import random
+
+    from yokoten.db import Chunk, Document, select, session
+    from yokoten.rag.models import NLI_MODEL, support
+
+    golden = load_golden()
+    qs = [
+        q
+        for q in golden
+        if q["gold"]
+        and q["category"] in ("factual", "numeric", "multi_hop", "recency", "table")
+        and len(q["reference_answer"]) > 15
+    ]
+    rng = random.Random(seed)
+
+    def doc_texts(doc_id: str) -> list[str]:
+        with session() as s:
+            d = s.exec(select(Document).where(Document.doc_id == doc_id, Document.is_latest)).first()
+            return [
+                c.text
+                for c in s.exec(
+                    select(Chunk).where(Chunk.rev_key == d.rev_key, Chunk.strategy == "structure")
+                ).all()
+            ]
+
+    rows = []
+    for q in rng.sample(qs, min(n, len(qs))):
+        premises = [t for grp in q["gold"] for t in doc_texts(grp[0])]
+        other = rng.choice([o for o in qs if o["gold"][0][0] != q["gold"][0][0]])
+        claims = [
+            (q["reference_answer"], True, q["category"]),
+            (other["reference_answer"], False, "other_answer"),
+        ]
+        if m := re.search(
+            r"\d+", q["reference_answer"]
+        ):  # hard negative: the true claim with one number altered
+            altered = (
+                q["reference_answer"][: m.start()]
+                + str(int(m.group()) + 7)
+                + q["reference_answer"][m.end() :]
+            )
+            claims.append((altered, False, "number_altered"))
+        for claim, label, kind in claims:
+            sup = support(premises, claim)
+            rows.append(
+                {"kind": kind, "label": label, "supported": sup["supported"], "nli": sup["entailment"] >= 0.5}
+            )
+    pos = [r for r in rows if r["label"]]
+    neg = [r for r in rows if not r["label"]]
+
+    def rate(rs, key, want):
+        return sum(r[key] == want for r in rs) / len(rs) if rs else None
+
+    by_kind = {
+        k: rate([r for r in rows if r["kind"] == k], "supported", k not in ("other_answer", "number_altered"))
+        for k in sorted({r["kind"] for r in rows})
+    }
+    out = {
+        "model": f"{NLI_MODEL} + lexical/number support",
+        "n": len(rows),
+        "tpr": rate(pos, "supported", True),
+        "tnr": rate(neg, "supported", False),
+        "nli_only_tpr": rate(pos, "nli", True),
+        "nli_only_tnr": rate(neg, "nli", False),
+        "accuracy_by_kind": by_kind,
+    }
+    log(
+        f"  faithfulness checker: TPR {out['tpr']:.2f}, TNR {out['tnr']:.2f} (NLI only: TPR {out['nli_only_tpr']:.2f}) "
+        f"on {len(rows)} known claims"
+    )
+    return out
+
+
+def latency_benchmark(cfg: RuntimeConfig, questions: list[dict], log=print, n: int = 8) -> list[dict]:
+    """Real end-to-end latency: LLM response cache off, stratified sample of answerable test questions."""
+    qs = stratified([q for q in questions if q["category"] not in ("unanswerable", "analytical")], n)
+    rows = []
+    for q in qs:
+        t = time.perf_counter()
+        res = ask(
+            q["question"],
+            q.get("history"),
+            cfg.model_copy(update={"llm_cache": False}),
+            role="admin",
+            save=False,
+        )
+        rows.append(
+            {"id": q["id"], "latency_ms": (time.perf_counter() - t) * 1000, "stages": res.get("stages", {})}
+        )
+    log(
+        f"  latency benchmark: {len(rows)} uncached answers, p50 {pct([r['latency_ms'] for r in rows], 50):.0f} ms"
+    )
+    return rows
 
 
 # ------------------------------------------------------------------ OCR
@@ -529,21 +646,23 @@ def run(
         failures = explain_failures(gen_configs[0]["rows"], {r["id"]: r for r in test_rows}, golden, th)
 
     public = run_public(chosen)
+    nli_check = validate_nli(log)
 
     # 5. OCR engines
     ocr_res = run_ocr(["tesseract", "easyocr"], log) if ocr_eval else {}
 
-    # 6. system metrics
+    # 6. system metrics: retrieval stages from the test run, answer stages from an uncached benchmark
+    bench = latency_benchmark(chosen, test, log) if gen else []
     stage_lat = defaultdict(list)
     for r in test_rows:
         for k, v in r["stages"].items():
             stage_lat[k].append(v)
-    for g in gen_configs[:1]:
-        for r in g["rows"]:
-            for k, v in (r.get("stages") or {}).items():
-                if k in ("context", "generate", "verify"):
-                    stage_lat[k].append(v)
+    for r in bench:
+        for k in ("context", "generate", "verify"):
+            if k in r["stages"]:
+                stage_lat[k].append(r["stages"][k])
     latency = {k: {"p50": pct(v, 50), "p95": pct(v, 95)} for k, v in stage_lat.items() if k in STAGES}
+    answer_p50 = pct([r["latency_ms"] for r in bench], 50)
     index = get_index(chosen.chunking, chosen.embedding_model, chosen.collections)
     index.faiss_index("flat")
     index.faiss_index("hnsw")
@@ -614,9 +733,9 @@ def run(
         },
         {
             "label": "Answer p50 latency",
-            "value": main.get("latency_p50_ms"),
+            "value": answer_p50,
             "format": "ms",
-            "hint": f"End-to-end with {provider_used}/{model_used}",
+            "hint": f"End-to-end, LLM cache off, {len(bench)} questions, {provider_used}/{model_used} on {device()}",
         },
     ]
     run_id = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -654,6 +773,12 @@ def run(
         "failures": failures,
         "public": public,
         "sql_experiment": sql_exp,
+        "nli_validation": nli_check,
+        "latency_benchmark": {
+            "n": len(bench),
+            "answer_p50_ms": answer_p50,
+            "answer_p95_ms": pct([r["latency_ms"] for r in bench], 95),
+        },
         "duration_s": round(time.perf_counter() - t_start, 1),
         "hardware": {"device": device()},
     }

@@ -14,6 +14,8 @@ Copy-Item (Join-Path $root "data\glossary.json") (Join-Path $out "data\glossary.
 # Space image: corpus + indexes + models baked in, read-only demo mode, CORS for the Vercel frontend
 $docker = (Get-Content (Join-Path $root "backend\Dockerfile") -Raw) -replace "ARG PREBUILD=0", "ARG PREBUILD=1"
 $docker = $docker -replace "PYTHONUNBUFFERED=1 PORT=8000", "PYTHONUNBUFFERED=1 PORT=8000 DEMO_MODE=true AUTO_INGEST=false CORS_ORIGINS=$FrontendOrigin"
+# models are baked in by the prebuild step: at runtime never block on the Hub
+$docker = $docker -replace "EXPOSE 8000", "ENV HF_HUB_OFFLINE=1`nEXPOSE 8000"
 [IO.File]::WriteAllText((Join-Path $out "Dockerfile"), $docker.Replace("`r`n", "`n"))
 $readme = @"
 ---

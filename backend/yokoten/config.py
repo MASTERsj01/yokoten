@@ -73,6 +73,7 @@ class RuntimeConfig(BaseModel):
     sql_route: bool = True  # analytical questions -> text-to-SQL (feature K)
     use_verified: bool = True  # boost SME-verified answers (feature M)
     verified_similarity: float = 0.88
+    llm_cache: bool = True  # the eval's latency benchmark turns this off
 
 
 RUNTIME_FILE = settings.var_dir / "runtime.json"

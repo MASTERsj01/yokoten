@@ -23,6 +23,9 @@ export type SentenceCheck = {
   entailment: number;
   contradiction: number;
   supported: boolean;
+  lexical?: number;
+  numbers_ok?: boolean;
+  method?: "nli" | "lexical" | null;
 };
 
 export type Verification = {

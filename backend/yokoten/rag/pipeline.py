@@ -24,7 +24,6 @@ from yokoten.retrieval.index import Hit, HybridRetriever, Index, get_index, hits
 ABSTAIN = "I could not find this in the knowledge base."
 FOLLOWUP = "follow-up questions:"
 MAX_CONTEXT_CHARS = 9000
-NLI_SUPPORT = 0.5
 
 
 @dataclass
@@ -304,39 +303,55 @@ def format_context(sources: list[Source]) -> str:
     return "\n\n".join(blocks)
 
 
-_SENT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\[(])|\n+")
+_SENT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(])|\n+")
 _CITE = re.compile(r"\[(\d+)\]")
+_TRAILING_CITES = re.compile(r"([.!?])\s*((?:\[\d+\]\s*)+)")
 
 
 def split_sentences(answer: str) -> list[str]:
+    """Sentences with their citations attached - models often write 'claim. [1]' instead of 'claim [1].'"""
+    answer = _TRAILING_CITES.sub(lambda m: " " + m.group(2).strip() + m.group(1) + " ", answer)
     return [s.strip(" -*") for s in _SENT.split(answer) if len(s.strip(" -*").split()) >= 3]
 
 
-def verify(answer: str, sources: list[Source]) -> dict:
-    """Sentence-level faithfulness with the NLI model + citation precision."""
+def _claim(sentence: str) -> str:
+    """The sentence without citation markers (also the exact text the UI underlines)."""
+    return re.sub(r"\s+([.!?,;:])", r"\1", _CITE.sub("", sentence)).strip()
+
+
+def verify(answer: str, sources: list[Source], question: str = "") -> dict:
+    """Sentence-level faithfulness (NLI on the closest source sentences, or lexical + number support) and
+    citation precision (does each cited passage on its own support the sentence?)."""
     by_n = {s.n: s for s in sources}
     rows, pairs_ok, pairs = [], 0, 0
     for sent in split_sentences(answer):
         cited = [int(n) for n in _CITE.findall(sent) if int(n) in by_n]
-        hyp = _CITE.sub("", sent).strip()
+        hyp = _claim(sent)
         if len(hyp.split()) < 3 or hyp.endswith(":"):  # list intros are not claims
             continue
         premises = [by_n[n].text for n in cited] or [s.text for s in sources]
-        ent, contra = models.entailment(premises, hyp)
+        sup = models.support(premises, hyp, question)
         per_cite = {}
         for n in cited:
-            e, _ = models.entailment([by_n[n].text], hyp) if len(cited) > 1 else (ent, contra)
-            per_cite[n] = round(e, 3)
+            ok = (
+                sup["supported"]
+                if len(cited) == 1
+                else models.support([by_n[n].text], hyp, question)["supported"]
+            )
+            per_cite[n] = ok
             pairs += 1
-            pairs_ok += e >= NLI_SUPPORT
+            pairs_ok += ok
         rows.append(
             {
-                "text": sent,
+                "text": hyp,
                 "cited": cited,
-                "entailment": round(ent, 3),
-                "contradiction": round(contra, 3),
-                "supported": ent >= NLI_SUPPORT,
-                "citation_entailment": per_cite,
+                "entailment": round(sup["entailment"], 3),
+                "contradiction": round(sup["contradiction"], 3),
+                "lexical": round(sup["lexical"], 3),
+                "numbers_ok": sup["numbers_ok"],
+                "supported": sup["supported"],
+                "method": sup["method"],
+                "citation_supported": per_cite,
             }
         )
     checked = len(rows)
@@ -400,7 +415,7 @@ def _stream_answer(messages, provider, model, call, steps, cfg) -> Iterator[dict
     followups: list[str] = []
     with steps.step("generate", provider=provider, model=model, prompt_version=cfg.prompt_version) as rec:
         buf, emitted, hidden = "", 0, False
-        for delta in llm.stream(messages, provider, model, call):
+        for delta in llm.stream(messages, provider, model, call, use_cache=cfg.llm_cache):
             buf += delta
             if hidden:
                 continue
@@ -519,7 +534,7 @@ def answer(
         abstained_by_llm = ABSTAIN.lower().rstrip(".") in text.lower()
         if not abstained_by_llm:
             with steps.step("verify") as rec:
-                verification = verify(text, sources)
+                verification = verify(text, sources, r.standalone)
                 rec.update(
                     faithfulness=verification["faithfulness"],
                     citation_precision=verification["citation_precision"],

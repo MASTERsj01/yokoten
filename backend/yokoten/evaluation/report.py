@@ -350,7 +350,9 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
             "judge = LLM-as-judge score from a different model family (if available); faithfulness = share of "
             "answer sentences entailed by their cited passages (NLI); citation precision = share of citations "
             "whose passage entails the sentence; hallucination rate = answered questions with at least one "
-            "unsupported sentence or an answer to an unanswerable question.",
+            "unsupported sentence or an answer to an unanswerable question. The text-to-SQL route is active in all "
+            "three configurations (its own effect is isolated in section 6b), so 'naive RAG' differs only in "
+            "retrieval (dense only, no rerank, no query rewriting or filters) and prompt v1.",
             "",
             _table(
                 ["Category", *[g["name"] for g in gens]],
@@ -363,9 +365,32 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
         ]
     else:
         L += ["Not yet measured in this run.", ""]
+    if run.get("nli_validation"):
+        v = run["nli_validation"]
+        L += [
+            "### How far can the faithfulness numbers be trusted?",
+            "",
+            f"A sentence counts as supported if the NLI model entails it from the 3 source sentences closest to it, or "
+            f"if at least 80% of its content words and every number it states appear in the cited passages (or the "
+            f"question it restates). The checker itself was validated on {v['n']} claims with known labels: reference "
+            f"answers against their gold documents (true), another question's reference answer (false) and the true "
+            f"claim with one number altered (false). It accepts **{_p(v['tpr'])}** of true claims and rejects "
+            f"**{_p(v['tnr'])}** of false ones (accuracy by kind: "
+            + ", ".join(f"{k} {_p(x, 0)}" for k, x in v["accuracy_by_kind"].items())
+            + f"). NLI alone accepted only {_p(v['nli_only_tpr'])} of true claims - it misses compound multi-hop and "
+            "table-derived claims - and the xsmall NLI model tried first accepted 10%, which is why the checker was "
+            "changed. Remaining misses make faithfulness a slightly conservative lower bound.",
+            "",
+        ]
     sysm = run["system"]
+    bench = run.get("latency_benchmark") or {}
     L += [
         "## 7. Latency, tokens and index",
+        "",
+        f"Retrieval stages come from the full test run; context / generate / verify come from a benchmark of "
+        f"{bench.get('n', 0)} answers with the LLM response cache switched off (answer p50 "
+        f"{(bench.get('answer_p50_ms') or 0) / 1000:.1f} s, p95 {(bench.get('answer_p95_ms') or 0) / 1000:.1f} s on "
+        f"`{run['hardware']['device']}`).",
         "",
         _table(
             ["Stage", "p50 ms", "p95 ms"],

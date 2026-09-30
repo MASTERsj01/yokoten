@@ -13,7 +13,8 @@ import numpy as np
 from yokoten.config import device
 
 RERANKER = "cross-encoder/ms-marco-MiniLM-L6-v2"
-NLI_MODEL = "cross-encoder/nli-deberta-v3-xsmall"
+NLI_MODEL = "cross-encoder/nli-deberta-v3-base"  # chosen by validating checkers on known-true/false claims
+FOCUS_MODEL = "BAAI/bge-small-en-v1.5"
 
 
 def sigmoid(x: float) -> float:
@@ -66,20 +67,117 @@ def nli_probs(pairs: list[tuple[str, str]], batch_size: int = 16) -> np.ndarray:
     return np.vstack(out)
 
 
-def windows(text: str, size: int = 900, overlap: int = 250) -> list[str]:
-    if len(text) <= size:
-        return [text]
-    return [text[i : i + size] for i in range(0, len(text) - overlap, size - overlap)]
+_UNIT = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def focus_premise(premises: list[str], hypothesis: str, k: int = 3) -> str:
+    """NLI models judge long passages poorly: keep the k source sentences closest to the claim (in source order)."""
+    from yokoten.retrieval.embeddings import model as embedder
+
+    units = [u.strip() for p in premises for u in _UNIT.split(p) if len(u.strip()) > 3]
+    if len(units) <= k:
+        return " ".join(units)
+    v = embedder(FOCUS_MODEL).encode(units + [hypothesis], normalize_embeddings=True, convert_to_numpy=True)
+    top = np.argsort(-(v[:-1] @ v[-1]))[:k]
+    return " ".join(units[i] for i in sorted(top))
+
+
+_STOP = set(
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "has",
+        "have",
+        "how",
+        "in",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "which",
+        "who",
+        "why",
+        "with",
+        "did",
+        "does",
+        "do",
+        "not",
+        "no",
+        "than",
+        "then",
+        "there",
+        "these",
+        "those",
+        "their",
+        "been",
+        "being",
+        "into",
+        "over",
+        "under",
+        "after",
+        "before",
+        "about",
+        "also",
+        "more",
+        "most",
+        "per",
+    ]
+)
+_WORD = re.compile(r"[a-z0-9][a-z0-9\-./]*")
+_NUM = re.compile(r"\d+(?:\.\d+)?")
+LEXICAL_SUPPORT = 0.8
+
+
+def _content(text: str) -> list[str]:
+    return [w for w in _WORD.findall(text.lower()) if w not in _STOP and len(w) > 1]
+
+
+def support(premises: list[str], claim: str, question: str = "") -> dict:
+    """Is the claim supported by the passages? NLI entailment on the closest source sentences, OR lexical support:
+    >= 80% of the claim's content words appear in the passages (or the question it restates) AND every number in
+    the claim appears there. Validated on known-true / known-false / number-altered claims in the eval."""
+    ent, contra = entailment(premises, claim)
+    given = " ".join(premises) + " " + question
+    words = _content(claim)
+    have = set(_content(given))
+    lexical = sum(w in have for w in words) / len(words) if words else 0.0
+    numbers_ok = set(_NUM.findall(claim.replace(",", ""))) <= set(_NUM.findall(given.replace(",", "")))
+    by_lexical = lexical >= LEXICAL_SUPPORT and numbers_ok
+    return {
+        "entailment": ent,
+        "contradiction": contra,
+        "lexical": lexical,
+        "numbers_ok": numbers_ok,
+        "supported": ent >= 0.5 or by_lexical,
+        "method": "nli" if ent >= 0.5 else "lexical" if by_lexical else None,
+    }
 
 
 def entailment(premises: list[str], hypothesis: str) -> tuple[float, float]:
-    """Best entailment probability of the hypothesis over all premise windows, and the contradiction prob there."""
-    pairs = [(w, hypothesis) for p in premises for w in windows(p)]
-    if not pairs:
+    """Entailment and contradiction probability of the claim given its most relevant source sentences."""
+    premise = focus_premise(premises, hypothesis)
+    if not premise:
         return 0.0, 0.0
-    probs = nli_probs(pairs)
-    best = int(np.argmax(probs[:, 0]))
-    return float(probs[best, 0]), float(probs[best, 2])
+    probs = nli_probs([(premise, hypothesis)])
+    return float(probs[0, 0]), float(probs[0, 2])
 
 
 INTENT_LABELS = {
