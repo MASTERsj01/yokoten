@@ -32,7 +32,7 @@ restarts.
 2. On vercel.com (sign in with GitHub) → *Add New Project* → import the repo → **Root Directory: `frontend`**.
 3. Environment variables:
    - `NEXT_PUBLIC_API_URL` = `https://<hf-user>-yokoten-api.hf.space`
-   - `NEXT_PUBLIC_GITHUB_URL` = `https://github.com/<github-user>/yokoten`
+   - `NEXT_PUBLIC_GITHUB_URL` = `https://github.com/mastersj01/yokoten`
    - `NEXT_PUBLIC_DEMO_VIDEO_URL` = embed URL of the demo video (optional)
 4. Deploy. Put the Vercel URL into the Space's CORS origin (step 1.3) if it differs.
 

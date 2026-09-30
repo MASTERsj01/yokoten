@@ -99,7 +99,7 @@ export default function Home() {
       .then(setSummary)
       .catch(() => setSummary("none"));
   }, []);
-  const github = process.env.NEXT_PUBLIC_GITHUB_URL;
+  const github = process.env.NEXT_PUBLIC_GITHUB_URL ?? "https://github.com/mastersj01/yokoten";
   const video = process.env.NEXT_PUBLIC_DEMO_VIDEO_URL;
 
   return (

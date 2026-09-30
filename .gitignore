@@ -10,7 +10,7 @@ var/
 
 # Generated corpus (reproducible: .\tasks.ps1 data)
 data/corpus/
-data/public/raw/
+data/public/
 
 # Python
 __pycache__/

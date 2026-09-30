@@ -151,4 +151,4 @@ feedback-driven improvement, multilingual documents.
 
 ## Author
 
-Ashwani Yadav — B.Tech Mechanical Engineering (CS minor), DTU.
+Ashwani Yadav — B.Tech Mechanical Engineering (CS minor), DTU · [github.com/mastersj01](https://github.com/mastersj01)
