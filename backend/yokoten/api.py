@@ -600,3 +600,92 @@ def ingestion_report() -> dict:
 
     p = settings.var_dir / "ingestion_report.json"
     return json.loads(p.read_text("utf-8")) if p.exists() else {}
+
+
+# ------------------------------------------------------------------ catalog + onboarding digest
+@app.get("/api/catalog")
+def catalog() -> dict:
+    from yokoten.ingest.entities import glossary
+
+    g = glossary()
+    return {
+        "components": {k: {"name": v["name"], "line": v["line"]} for k, v in g["components"].items()},
+        "product_lines": {
+            "thermal": "Thermal Systems",
+            "powertrain": "Powertrain Components",
+            "electrification": "Electrification",
+            "body_electronics": "Body Electronics",
+        },
+        "plants": {k: v[0].title() for k, v in g["plants"].items()},
+        "doc_types": DOC_TYPE_LABEL,
+        "roles": list(ROLE_ACCESS),
+    }
+
+
+class DigestIn(BaseModel):
+    component: str | None = None
+    product_line: str | None = None
+
+
+def _digest(body: DigestIn, role: str) -> dict:
+    from yokoten.rag.onboarding import digest
+
+    if not (body.component or body.product_line):
+        raise HTTPException(400, "choose a component or a product line")
+    return digest(body.component, body.product_line, role)
+
+
+@app.post("/api/onboarding")
+def onboarding(body: DigestIn, x_role: RoleHeader = None) -> dict:
+    return _digest(body, role_of(x_role))
+
+
+@app.post("/api/onboarding/summary")
+def onboarding_summary(body: DigestIn, x_role: RoleHeader = None) -> dict:
+    from yokoten.rag.onboarding import summary
+
+    cfg = load_runtime()
+    return summary(_digest(body, role_of(x_role)), cfg.llm_provider, cfg.llm_model)
+
+
+# ------------------------------------------------------------------ evaluation results
+def _latest_eval() -> dict:
+    import json
+
+    from yokoten.evaluation.harness import RESULTS
+
+    p = RESULTS / "latest.json"
+    if not p.exists():
+        raise HTTPException(404, "no evaluation run yet")
+    return json.loads(p.read_text("utf-8"))
+
+
+@app.get("/api/eval/latest")
+def eval_latest() -> dict:
+    run = _latest_eval()
+    run["retrieval"].pop("rows", None)
+    for g in run["generation"]["configs"]:
+        g.pop("rows", None)
+    return run
+
+
+@app.get("/api/eval/summary")
+def eval_summary() -> dict:
+    run = _latest_eval()
+    c = run["config"]
+    return {
+        "run_id": run["run_id"],
+        "created_at": run["created_at"],
+        "headline": run["headline"],
+        "split": run["split"],
+        "config": f"{c['retrieval_mode']} · {c['chunking']} · "
+        f"{c['embedding_model'].split('/')[-1]} · rerank {'on' if c['reranker'] else 'off'}",
+    }
+
+
+@app.get("/api/eval/runs")
+def eval_runs() -> list[dict]:
+    from yokoten.db import EvalRun
+
+    with session() as s:
+        return [r.model_dump() for r in s.exec(select(EvalRun).order_by(EvalRun.created_at.desc())).all()]

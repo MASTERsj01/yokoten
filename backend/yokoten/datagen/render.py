@@ -4,6 +4,7 @@ import html
 import io
 import math
 import random
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -44,6 +45,8 @@ class Doc:
 
     @property
     def filename(self) -> str:
+        if self.fmt in ("png", "jpg"):  # a scan's revision must only be knowable from its title block
+            return f"{self.id}.{self.fmt}"
         return f"{self.id}_Rev{self.revision}.{self.fmt}"
 
     def meta(self) -> dict:
@@ -75,7 +78,26 @@ def render(doc: Doc, out_dir: Path, rng: random.Random) -> Path:
     {"pdf": _pdf, "docx": _docx, "xlsx": _xlsx, "md": _md, "png": _scan, "jpg": _scan}[doc.fmt](
         doc, path, rng
     )
+    if doc.fmt in ("docx", "xlsx"):
+        _fix_zip_times(path)
     return path
+
+
+def _fix_zip_times(path: Path) -> None:
+    """Office files are zips stamped with the current time; pin them so the corpus is byte-reproducible."""
+    import zipfile
+
+    with zipfile.ZipFile(path) as z:
+        items = [(i, z.read(i.filename)) for i in z.infolist()]
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        for info, data in items:
+            if info.filename == "docProps/core.xml":  # openpyxl always writes modified=now
+                data = re.sub(
+                    rb"(<dcterms:(?:modified|created)[^>]*>)[^<]*", rb"\g<1>2025-01-01T00:00:00Z", data
+                )
+            fixed = zipfile.ZipInfo(info.filename, date_time=(2025, 1, 1, 0, 0, 0))
+            fixed.compress_type, fixed.external_attr = zipfile.ZIP_DEFLATED, info.external_attr
+            z.writestr(fixed, data)
 
 
 def _png(fig) -> bytes:

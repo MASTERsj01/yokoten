@@ -289,7 +289,7 @@ def verify(answer: str, sources: list[Source]) -> dict:
     for sent in split_sentences(answer):
         cited = [int(n) for n in _CITE.findall(sent) if int(n) in by_n]
         hyp = _CITE.sub("", sent).strip()
-        if len(hyp.split()) < 3:
+        if len(hyp.split()) < 3 or hyp.endswith(":"):  # list intros are not claims
             continue
         premises = [by_n[n].text for n in cited] or [s.text for s in sources]
         ent, contra = models.entailment(premises, hyp)
@@ -460,6 +460,9 @@ def answer(
         "confidence": conf,
         "confidence_label": label,
         "latency_ms": latency,
+        "input_tokens": call.input_tokens,
+        "output_tokens": call.output_tokens,
+        "stages": {st["name"]: st["ms"] for st in steps},
     }
     if save:
         with session() as s:

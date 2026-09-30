@@ -159,6 +159,13 @@ class Feedback(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now)
 
 
+class EvalRun(SQLModel, table=True):
+    id: str = Field(primary_key=True)
+    summary: dict = Field(default_factory=dict, sa_type=JSON)
+    path: str = ""
+    created_at: datetime = Field(default_factory=now)
+
+
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
 

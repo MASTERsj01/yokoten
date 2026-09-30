@@ -71,6 +71,30 @@ def cmd_ask(args):
                 print("follow-ups: " + " | ".join(data["suggestions"]))
 
 
+def cmd_eval(args):
+    from yokoten.evaluation.harness import RESULTS, run
+    from yokoten.evaluation.report import write_report
+
+    if args.report_only:
+        result = json.loads((RESULTS / "latest.json").read_text("utf-8"))
+    else:
+        result = run(
+            skip_ablations=args.skip_ablations,
+            gen_limit=args.gen_limit,
+            gen=not args.no_gen,
+            ocr_eval=not args.no_ocr,
+            provider=args.provider,
+        )
+    path = write_report(result)
+    for h in result["headline"]:
+        v = h["value"]
+        shown = (
+            "not yet measured" if v is None else f"{v / 1000:.2f} s" if h["format"] == "ms" else f"{v:.1%}"
+        )
+        print(f"{h['label']:24s} {shown}")
+    print(f"report -> {path}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="yokoten")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -95,6 +119,18 @@ def main(argv=None):
     a.add_argument("--model")
     a.add_argument("--role", default="admin")
     a.set_defaults(func=cmd_ask)
+    e = sub.add_parser("eval", help="run the evaluation (ablations, generation, OCR) and write the report")
+    e.add_argument("--skip-ablations", action="store_true")
+    e.add_argument(
+        "--gen-limit", type=int, default=None, help="stratified subset of test questions for generation"
+    )
+    e.add_argument("--no-gen", action="store_true", help="retrieval + OCR only (no LLM calls)")
+    e.add_argument("--no-ocr", action="store_true")
+    e.add_argument("--provider", choices=["groq", "gemini", "ollama", "local"])
+    e.add_argument(
+        "--report-only", action="store_true", help="re-render docs/EVALUATION_REPORT.md from latest.json"
+    )
+    e.set_defaults(func=cmd_eval)
     args = ap.parse_args(argv)
     args.func(args)
 

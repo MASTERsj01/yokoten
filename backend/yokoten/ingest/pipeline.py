@@ -89,6 +89,10 @@ def ingest_file(
     with session() as s:
         doc = s.get(Document, rev_key)
         if doc and doc.sha256 == digest and doc.status == "ready" and not force:
+            if doc.file != meta["file"]:  # renamed but unchanged content
+                doc.file = meta["file"]
+                s.add(doc)
+                s.commit()
             return doc, False
         fields = {
             k: meta.get(k)
@@ -141,6 +145,8 @@ def ingest_file(
                 if comp in entities.glossary()["components"]:
                     doc.component = comp
                     doc.product_line = entities.glossary()["components"][comp]["line"]
+            if f.get("revision"):  # title block is the authority for a drawing's revision
+                doc.revision = f["revision"]
             if f.get("supplier"):
                 doc.suppliers = [f["supplier"]]
             if f.get("plant") and (p := entities.plants_in(f["plant"])):

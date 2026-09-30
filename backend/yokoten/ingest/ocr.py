@@ -143,14 +143,43 @@ def run_engine(img: np.ndarray, engine: str) -> list[OcrLine]:
                 x, y, bw, bh = d["left"][i], d["top"][i], d["width"][i], d["height"][i]
                 raw.append((word, float(d["conf"][i]) / 100, (x, y, x + bw, y + bh)))
     else:
-        for pts, text, conf in _easyocr_reader().readtext(img, paragraph=False):
+        reader = _easyocr_reader()
+        for pts, text, conf in reader.readtext(img, paragraph=False):
             xs, ys = [p[0] for p in pts], [p[1] for p in pts]
             raw.append((text, float(conf), (min(xs), min(ys), max(xs), max(ys))))
+        raw += _reread_empty_cells(raw, img, reader)
     return [
         OcrLine(text=fix_ocr_text(t.strip()), conf=round(c, 3), bbox=(b[0] / w, b[1] / h, b[2] / w, b[3] / h))
         for t, c, b in _group_lines(raw)
         if t.strip()
     ]
+
+
+TITLE_BLOCK_LABELS = {"REV", "REVISION", "SCALE", "MATERIAL", "FINISH", "PART NO", "TITLE", "DATE", "DRAWN"}
+
+
+def _reread_empty_cells(raw: list[tuple], img: np.ndarray, reader) -> list[tuple]:
+    """Text detectors miss isolated single characters (e.g. revision 'C'). When a title-block label has nothing to
+    its right on the same row, run the recogniser directly on that cell region."""
+    extra = []
+    w = img.shape[1]
+    for text, _, (x0, y0, x1, y1) in raw:
+        if text.strip().upper().rstrip(":") not in TITLE_BLOCK_LABELS:
+            continue
+        cy = (y0 + y1) / 2
+        if any(b[0] > x1 and b[1] <= cy <= b[3] for _, _, b in raw):
+            continue
+        h = y1 - y0
+        region = [
+            int(x1 + 0.5 * h),
+            int(min(w - 1, x1 + 12 * h)),
+            int(max(0, y0 - 0.4 * h)),
+            int(y1 + 0.4 * h),
+        ]
+        for _, t, c in reader.recognize(img, horizontal_list=[region], free_list=[], detail=1):
+            if t.strip() and c >= 0.3:
+                extra.append((t.strip(), float(c), (region[0], y0, region[1], y1)))
+    return extra
 
 
 _ALNUM = re.compile(r"\b(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]+\b")
@@ -159,7 +188,8 @@ _ALNUM = re.compile(r"\b(?=[A-Za-z0-9-]*\d)[A-Za-z0-9-]+\b")
 def fix_ocr_text(text: str) -> str:
     """Domain-aware O/0 repair inside codes that contain digits (e.g. 'GF3O' -> 'GF30', 'BMS - 91020' -> 'BMS-91020')."""
     text = re.sub(r"\b([A-Z]{3}) - (\d{5})\b", r"\1-\2", text)
-    return _ALNUM.sub(lambda m: re.sub(r"(?<=\d)[Oo]|[Oo](?=\d)", "0", m.group(0)), text)
+    # O -> 0 only after a digit, or before a digit when not preceded by a letter ('42CrMo4' stays as is)
+    return _ALNUM.sub(lambda m: re.sub(r"(?<=\d)[Oo]|(?<![A-Za-z])[Oo](?=\d)", "0", m.group(0)), text)
 
 
 def ocr(path: Path, engine: str = "auto", use_preprocessing: bool = True) -> OcrResult:
@@ -206,7 +236,14 @@ def extract_fields(text: str) -> dict[str, str]:
     for name, rx in FIELD_RES.items():
         m = rx.search(text)
         if m:
-            out[name] = re.sub(r"\s+", "", m.group(1)) if name == "part_number" else m.group(1).strip()
+            val = m.group(1).strip()
+            out[name] = (
+                re.sub(r"\s+", "", val)
+                if name == "part_number"
+                else val.upper()
+                if name == "revision"
+                else val
+            )
     if "part_number" not in out:
         m = PART_RE.search(text)
         if m:
