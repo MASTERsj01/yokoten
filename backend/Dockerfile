@@ -17,6 +17,10 @@ COPY eval/ /app/eval/
 RUN uv sync --frozen --no-dev && mkdir -p /app/var && chown -R app:app /app
 USER app
 ARG PREBUILD=0
-RUN if [ "$PREBUILD" = "1" ]; then uv run --no-sync yokoten gen-data && uv run --no-sync yokoten ingest; fi
+# easyocr = the engine the published eval used; the `ask` smoke test fails the build if the pipeline is broken and
+# pulls the query-time models (reranker, NLI checker, local fallback LLM) into the image, so the runtime can be offline
+RUN if [ "$PREBUILD" = "1" ]; then uv run --no-sync yokoten gen-data && uv run --no-sync yokoten ingest --ocr easyocr \
+    && uv run --no-sync yokoten ask "What was the root cause of the EPS Hall sensor failure on project P-EPS-2102?" \
+       --provider local; fi
 EXPOSE 8000
 CMD ["sh", "-c", "uv run --no-sync uvicorn yokoten.api:app --host 0.0.0.0 --port ${PORT}"]
