@@ -62,7 +62,15 @@ def fact_present(answer: str, fact: str) -> bool:
     a = _norm(answer)
     for alt in fact.split("|"):
         alt = _norm(alt.strip())
-        if alt and re.search(rf"(?<![\w.]){re.escape(alt)}(?![\w])", a):
+        if not alt:
+            continue
+        if re.fullmatch(
+            r"\d+(?:\.\d+)?", alt
+        ):  # numbers: no adjacent digits, but units may follow ("1.1x", "38%")
+            pattern = rf"(?<![\d.]){re.escape(alt)}(?!\d|\.\d)"
+        else:
+            pattern = rf"(?<![\w.]){re.escape(alt)}(?![\w])"
+        if re.search(pattern, a):
             return True
     return False
 

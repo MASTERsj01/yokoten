@@ -110,7 +110,8 @@ def answer_rows(question: str, role: str, provider: str, model: str) -> dict:
 
 def check_answer(answer: str, info: dict) -> dict:
     """SQL answers are checked for consistency with the result table: every number stated must appear in it."""
-    nums = set(re.findall(r"\b\d+(?:\.\d+)?\b", answer.replace(",", "")))
+    stated = re.sub(r"\[\d+\]", "", answer).replace(",", "")  # citation markers are not stated numbers
+    nums = set(re.findall(r"\b\d+(?:\.\d+)?\b", stated))
     table = {str(v) for r in info["rows"] for v in r if v is not None}
     table |= {str(int(v)) for r in info["rows"] for v in r if isinstance(v, float) and v.is_integer()}
     ok = [n for n in nums if n in table or any(n in str(v) for v in table)]

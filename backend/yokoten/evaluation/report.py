@@ -105,14 +105,21 @@ def _winners(abl: list[dict]) -> list[str]:
     for g in dict.fromkeys(a["group"] for a in abl if not a["group"].endswith("_dense_only")):
         items = [a for a in abl if a["group"] == g]
         chosen = next(a for a in items if a["chosen"])
+        name = f"**{g.replace('_', ' ')} = {chosen['variant']}**"
+        scores = {round(a["dev"]["recall@5"] + a["dev"]["mrr"], 4) for a in items}
+        if len(scores) == 1:
+            lines.append(
+                f"- {name} — all variants tie on dev and test (test Recall@5 "
+                f"{_p(chosen['metrics']['recall@5'])}); kept the default."
+            )
+            continue
         worst = min(items, key=lambda a: a["dev"]["recall@5"] + a["dev"]["mrr"])
-        delta = chosen["metrics"]["recall@5"] - worst["metrics"]["recall@5"]
+        d5 = chosen["metrics"]["recall@5"] - worst["metrics"]["recall@5"]
         dm = chosen["metrics"]["mrr"] - worst["metrics"]["mrr"]
         lines.append(
-            f"- **{g.replace('_', ' ')} = {chosen['variant']}** — best on dev; on test Recall@5 "
-            f"{_p(chosen['metrics']['recall@5'])} vs {_p(worst['metrics']['recall@5'])} for "
-            f"`{worst['variant']}` (Δ {delta * 100:+.1f} pts, MRR Δ {dm * 100:+.1f} pts), "
-            f"p50 {chosen['metrics']['latency_p50_ms']:.0f} ms."
+            f"- {name} — best on dev (Recall@5 + MRR). On test vs `{worst['variant']}`: Recall@5 "
+            f"{d5 * 100:+.1f} pts, MRR {dm * 100:+.1f} pts; p50 {chosen['metrics']['latency_p50_ms']:.0f} ms vs "
+            f"{worst['metrics']['latency_p50_ms']:.0f} ms."
         )
     return lines
 
@@ -125,29 +132,50 @@ def _recommendations(run: dict) -> list[str]:
         a = abl.get((g, v))
         return a["metrics"]["recall@5"] if a else None
 
-    if r5("retrieval_mode", "hybrid") is not None and r5("retrieval_mode", "dense") is not None:
-        d = r5("retrieval_mode", "hybrid") - r5("retrieval_mode", "dense")
+    def mrr(g, v):
+        a = abl.get((g, v))
+        return a["metrics"]["mrr"] if a else None
+
+    if ("query_rewrite", "on") in abl and ("query_rewrite", "off") in abl:
+        d = r5("query_rewrite", "on") - r5("query_rewrite", "off")
         recs.append(
-            f"Keep hybrid retrieval: BM25 adds exact matching of part numbers, lots and document IDs "
-            f"({d * 100:+.1f} pts Recall@5 vs dense-only on test)."
+            f"Keep query rewriting (condensing follow-ups + glossary acronym expansion): the largest single "
+            f"retrieval gain measured ({d * 100:+.1f} pts Recall@5 on test)."
+        )
+    if ("metadata_filters", "on") in abl and ("metadata_filters", "off") in abl:
+        d = mrr("metadata_filters", "on") - mrr("metadata_filters", "off")
+        recs.append(
+            f"Keep metadata filter extraction ({d * 100:+.1f} pts MRR on test); its 'compatible-with' "
+            f"semantics keep documents without a component (e.g. supplier reports) available for multi-hop."
         )
     if r5("reranker", "on") is not None and r5("reranker", "off") is not None:
-        d = abl[("reranker", "on")]["metrics"]["mrr"] - abl[("reranker", "off")]["metrics"]["mrr"]
+        d = mrr("reranker", "on") - mrr("reranker", "off")
         recs.append(
-            f"Keep the cross-encoder reranker ({d * 100:+.1f} pts MRR) - it also provides the calibrated "
-            f"relevance score that drives abstention."
+            f"Keep the cross-encoder reranker ({d * 100:+.1f} pts MRR on test, at ~3x the retrieval "
+            f"latency on CPU) - it also provides the calibrated relevance score that drives abstention."
         )
+    if r5("retrieval_mode", "hybrid") is not None and r5("retrieval_mode", "dense") is not None:
+        d = r5("retrieval_mode", "hybrid") - r5("retrieval_mode", "dense")
+        if abs(d) < 0.005:
+            recs.append(
+                "Dense, BM25 and hybrid first stages end in the same final ranking once the reranker "
+                "re-orders a 30-candidate pool on this corpus; hybrid is kept because BM25 guarantees exact "
+                "matches on part numbers, lots and document IDs as the corpus grows."
+            )
+        else:
+            recs.append(f"Keep hybrid retrieval ({d * 100:+.1f} pts Recall@5 vs dense-only on test).")
     if ("vector_store", "faiss-hnsw") in abl and ("vector_store", "faiss-flat") in abl:
-        d = r5("vector_store", "faiss-hnsw") - r5("vector_store", "faiss-flat")
         recs.append(
-            f"At this corpus size exact FAISS Flat search costs nothing; HNSW changed Recall@5 by "
-            f"{d * 100:+.1f} pts. Switch to HNSW (or Chroma) once the index passes ~1M chunks."
+            "Exact FAISS Flat search is instant at this size and HNSW / Chroma return the same ranking; "
+            "switch to HNSW (or a managed vector DB) once the index reaches millions of chunks."
         )
     cats = run["retrieval"]["by_category"]
-    weakest = sorted(cats.items(), key=lambda kv: kv[1]["recall@5"] or 0)[:2]
+    weakest = [
+        kv for kv in sorted(cats.items(), key=lambda kv: kv[1]["mrr"] or 0) if (kv[1]["mrr"] or 0) < 0.95
+    ][:2]
     for c, m in weakest:
         recs.append(
-            f"Weakest retrieval category: **{c}** (Recall@5 {_p(m['recall@5'])}). "
+            f"Weak retrieval category: **{c}** (Recall@5 {_p(m['recall@5'])}, MRR {_n(m['mrr'])}). "
             + {
                 "filter": "List questions need every matching document - route them to structured metadata "
                 "queries (text-to-SQL) instead of top-k passages.",
@@ -157,6 +185,8 @@ def _recommendations(run: dict) -> list[str]:
                 "ocr": "Improve OCR on single-character title-block fields (Tesseract, or cell-level re-reads).",
                 "analytical": "Counting questions are answered from SQL tables, not passages.",
                 "recency": "Boost the latest revision at rank time, not only at context-building time.",
+                "table": "Spreadsheet rows rank below prose; index FMEA rows with their column names in the "
+                "embedding text and route rating look-ups to SQL.",
             }.get(c, "Add targeted synonyms to the glossary for this question type.")
         )
     gens = run["generation"]["configs"]
@@ -170,8 +200,9 @@ def _recommendations(run: dict) -> list[str]:
             )
         if (g.get("hallucination_rate") or 0) > 0.2:
             recs.append(
-                "Hallucination rate is above 20%: block or flag answers whose NLI-unsupported sentence share "
-                "exceeds a threshold, and show the unsupported sentences to the user (already underlined in the UI)."
+                f"Hallucination rate is {_p(g.get('hallucination_rate'))} with a 1.5B local model: flag answers whose "
+                "unsupported-sentence share exceeds a threshold (unsupported sentences are already underlined in "
+                "the UI), and re-run this evaluation with a hosted 70B model before any pilot."
             )
     ocr = (run.get("ocr") or {}).get("engines") or {}
     if ocr:
@@ -202,15 +233,17 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
         "",
         "## 1. Setup",
         "",
-        f"- **Corpus:** {ing.get('documents', '—')} synthetic documents of the fictional supplier Norvane Automotive "
-        f"Systems ({', '.join(f'{v} {k}' for k, v in (ing.get('by_format') or {}).items())}); "
-        f"{(ing.get('chunks') or {}).get(cfg['chunking'], '—')} indexed chunks with the chosen chunking.",
+        f"- **Corpus:** {(ing.get('by_collection') or {}).get('engineering', '—')} synthetic documents of the "
+        f"fictional supplier Norvane Automotive Systems (PDF, DOCX, XLSX, Markdown, scanned PNG/JPG); "
+        f"{run['system']['index']['chunks_indexed']} indexed chunks with the chosen `{cfg['chunking']}` chunking. "
+        f"A separate collection of {(ing.get('by_collection') or {}).get('public_recalls', 0)} real NHTSA recall "
+        f"campaigns is evaluated on its own (section 8b).",
         f"- **Golden set:** {len(golden)} questions derived from the generator's ground truth "
         f"(dev {sum(1 for q in golden if q['split'] == 'dev')} for tuning, "
         f"test {sum(1 for q in golden if q['split'] == 'test')} for every number below).",
         f"- **Hardware:** {platform.processor() or platform.machine()}, device `{run['hardware']['device']}`.",
         f"- **Models:** embeddings `{cfg['embedding_model']}`, reranker `cross-encoder/ms-marco-MiniLM-L6-v2`, "
-        f"NLI `cross-encoder/nli-deberta-v3-xsmall`, generator "
+        f"faithfulness checker `{(run.get('nli_validation') or {}).get('model', 'NLI')}`, generator "
         f"`{gens[0]['provider'] + '/' + gens[0]['model'] if gens else 'n/a'}`, judge "
         f"`{run['generation']['judge'] or 'none available (no second provider key)'}`.",
         "",
@@ -277,6 +310,15 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
             L += [
                 f"### {g.replace('_', ' ')}",
                 "",
+                *(
+                    [
+                        "Diagnostic, not used for selection: each embedding model on its own (dense only, no BM25, no "
+                        "reranker) to show first-stage differences that the full pipeline hides.",
+                        "",
+                    ]
+                    if g.endswith("_dense_only")
+                    else []
+                ),
                 _table(
                     [
                         "Variant",
@@ -323,7 +365,7 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
     ]
     L += ["## 6. Generation", ""]
     if gens:
-        keys = list(gens[0]["metrics"])
+        keys = [k for k in gens[0]["metrics"] if k != "latency_p50_ms"]  # replayed from cache: see section 7
         L += [
             f"{run['generation']['n_questions']} test questions (stratified by category) per configuration.",
             "",
@@ -348,8 +390,8 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
             "",
             "Definitions: correctness = share of reference facts present in the answer (answerable questions); "
             "judge = LLM-as-judge score from a different model family (if available); faithfulness = share of "
-            "answer sentences entailed by their cited passages (NLI); citation precision = share of citations "
-            "whose passage entails the sentence; hallucination rate = answered questions with at least one "
+            "answer sentences supported by their cited passages (validated checker below); citation precision = "
+            "share of citations whose passage alone supports the sentence; hallucination rate = answered questions with at least one "
             "unsupported sentence or an answer to an unanswerable question. The text-to-SQL route is active in all "
             "three configurations (its own effect is isolated in section 6b), so 'naive RAG' differs only in "
             "retrieval (dense only, no rerank, no query rewriting or filters) and prompt v1.",
@@ -365,10 +407,24 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
         ]
     else:
         L += ["Not yet measured in this run.", ""]
+    if run.get("sql_experiment"):
+        e = run["sql_experiment"]
+        L += [
+            "## 6b. Text-to-SQL routing for analytical questions",
+            "",
+            "Counting / ranking questions answered from the structured tables (document metadata + FMEA rows) "
+            "instead of top-k passages; the generated SQL is shown in the trace.",
+            "",
+            _table(
+                ["Route", "n", "Correctness"],
+                [[k.replace("_", " "), v["n"], _p(v["correctness"])] for k, v in e.items()],
+            ),
+            "",
+        ]
     if run.get("nli_validation"):
         v = run["nli_validation"]
         L += [
-            "### How far can the faithfulness numbers be trusted?",
+            "## 6c. How far can the faithfulness numbers be trusted?",
             "",
             f"A sentence counts as supported if the NLI model entails it from the 3 source sentences closest to it, or "
             f"if at least 80% of its content words and every number it states appear in the cited passages (or the "
@@ -420,20 +476,6 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
             ),
             "",
         ]
-    if run.get("sql_experiment"):
-        e = run["sql_experiment"]
-        L += [
-            "## 6b. Text-to-SQL routing for analytical questions",
-            "",
-            "Counting / ranking questions answered from the structured tables (document metadata + FMEA rows) "
-            "instead of top-k passages; the generated SQL is shown in the trace.",
-            "",
-            _table(
-                ["Route", "n", "Correctness"],
-                [[k.replace("_", " "), v["n"], _p(v["correctness"])] for k, v in e.items()],
-            ),
-            "",
-        ]
     if run.get("public"):
         pub = run["public"]
         L += [
@@ -470,7 +512,24 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
         ]
     if not run["failures"]:
         L += ["No failures recorded (generation not run).", ""]
-    L += ["## 10. Chosen configuration and why", "", "```json", json.dumps(cfg, indent=2), "```", ""]
+    shown = {
+        k: v
+        for k, v in cfg.items()
+        if k not in ("llm_provider", "llm_model", "use_verified", "llm_cache", "verified_similarity")
+    }
+    L += [
+        "## 10. Chosen configuration and why",
+        "",
+        f"Retrieval and prompt settings below; the generator used in this run was "
+        f"`{gens[0]['provider']}/{gens[0]['model']}` (the configured provider falls back when no key is set)."
+        if gens
+        else "",
+        "",
+        "```json",
+        json.dumps(shown, indent=2),
+        "```",
+        "",
+    ]
     L += _winners(ret["ablations"]) + [""] if ret["ablations"] else []
     L += ["## 11. Recommendations", ""] + [f"- {r}" for r in _recommendations(run)] + [""]
     L += [
@@ -481,8 +540,10 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
         "- The golden set has 129 questions; per-category test numbers rest on 4-16 questions each.",
         "- Correctness uses fact matching; paraphrased numbers or units can be scored as misses. The LLM judge "
         "runs only when a second provider key is configured.",
-        "- NLI faithfulness uses a 22M-parameter model; it is a strong filter for fabricated facts but can miss "
-        "subtle numeric errors.",
+        "- Faithfulness uses an NLI + lexical/number checker validated on known claims (section 6); it misses some "
+        "true table-derived claims, so faithfulness is a conservative lower bound.",
+        "- All generation numbers use a 1.5B-parameter local model because no hosted LLM key was configured for this "
+        "run; `.\\tasks.ps1 eval --provider groq` reproduces them with a hosted model.",
         "",
     ]
     path.write_text("\n".join(L), "utf-8")

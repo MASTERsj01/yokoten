@@ -222,11 +222,13 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Configuration</TableHead>
-                        {Object.keys(gen[0].metrics).map((k) => (
-                          <TableHead key={k} className="text-right">
-                            {k.replaceAll("_", " ")}
-                          </TableHead>
-                        ))}
+                        {Object.keys(gen[0].metrics)
+                          .filter((k) => k !== "latency_p50_ms")
+                          .map((k) => (
+                            <TableHead key={k} className="text-right">
+                              {k.replaceAll("_", " ")}
+                            </TableHead>
+                          ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -238,11 +240,13 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
                               {g.provider} · {g.model} · prompt {g.prompt_version} · n={g.n}
                             </div>
                           </TableCell>
-                          {Object.entries(g.metrics).map(([k, v]) => (
-                            <TableCell key={k} className="text-right tabular-nums">
-                              {k.includes("tokens") || k.includes("_ms") ? num(v, 0) : pct(v)}
-                            </TableCell>
-                          ))}
+                          {Object.entries(g.metrics)
+                            .filter(([k]) => k !== "latency_p50_ms")
+                            .map(([k, v]) => (
+                              <TableCell key={k} className="text-right tabular-nums">
+                                {k.includes("tokens") || k.includes("_ms") ? num(v, 0) : pct(v)}
+                              </TableCell>
+                            ))}
                         </TableRow>
                       ))}
                     </TableBody>

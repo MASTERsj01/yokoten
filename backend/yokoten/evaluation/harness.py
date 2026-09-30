@@ -708,7 +708,7 @@ def run(
             "hint": "Share of reference facts present in the answer (answerable test questions)",
         },
         {
-            "label": "Faithfulness (NLI)",
+            "label": "Faithfulness",
             "value": main.get("faithfulness"),
             "format": "pct",
             "hint": "Share of answer sentences entailed by the cited passages",
@@ -805,3 +805,35 @@ def _save_db(result: dict) -> None:
             )
         )
         s.commit()
+
+
+def rescore(result: dict) -> dict:
+    """Recompute answer-level metrics from the stored answers (after a metric fix) - no LLM calls."""
+    golden = {q["id"]: q for q in load_golden()}
+    for g in result["generation"]["configs"]:
+        for r in g["rows"]:
+            q = golden[r["id"]]
+            if not r["unanswerable"]:
+                r["correctness"] = fact_score(r["answer"], q["answer_facts"])
+                r["missing_facts"] = [f for f in q["answer_facts"] if not fact_present(r["answer"], f)]
+        s = summarize_generation(g["rows"])
+        g["metrics"], g["by_category"] = s["metrics"], s["by_category"]
+    for exp in (result.get("sql_experiment") or {}).values():
+        for r in exp["rows"]:
+            r["correctness"] = fact_score(r["answer"], golden[r["id"]]["answer_facts"])
+        exp["correctness"] = mean(r["correctness"] for r in exp["rows"])
+    gens = result["generation"]["configs"]
+    if gens:
+        rows = {r["id"]: r for r in result["retrieval"]["rows"]}
+        result["failures"] = explain_failures(gens[0]["rows"], rows, golden, result["retrieval"]["threshold"])
+        by_label = {h["label"]: h for h in result["headline"]}
+        for label, key in (
+            ("Answer correctness", "correctness"),
+            ("Faithfulness", "faithfulness"),
+            ("Abstention recall", "abstention_recall"),
+            ("Hallucination rate", "hallucination_rate"),
+        ):
+            if label in by_label:
+                by_label[label]["value"] = gens[0]["metrics"][key]
+    result["rescored_at"] = datetime.now(UTC).isoformat()
+    return result

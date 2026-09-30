@@ -75,8 +75,14 @@ def cmd_eval(args):
     from yokoten.evaluation.harness import RESULTS, run
     from yokoten.evaluation.report import update_readme, write_report
 
-    if args.report_only:
+    if args.report_only or args.rescore:
         result = json.loads((RESULTS / "latest.json").read_text("utf-8"))
+        if args.rescore:
+            from yokoten.evaluation.harness import rescore
+
+            result = rescore(result)
+            for name in ("latest.json", f"{result['run_id']}.json"):
+                (RESULTS / name).write_text(json.dumps(result, indent=1, default=str), "utf-8")
     else:
         result = run(
             skip_ablations=args.skip_ablations,
@@ -147,6 +153,9 @@ def main(argv=None):
     e.add_argument("--provider", choices=["groq", "gemini", "ollama", "local"])
     e.add_argument(
         "--report-only", action="store_true", help="re-render docs/EVALUATION_REPORT.md from latest.json"
+    )
+    e.add_argument(
+        "--rescore", action="store_true", help="recompute answer metrics from stored answers (no LLM calls)"
     )
     e.set_defaults(func=cmd_eval)
     pd = sub.add_parser("public-data", help="download + ingest the NHTSA recalls collection (public domain)")

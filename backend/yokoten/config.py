@@ -57,7 +57,7 @@ class RuntimeConfig(BaseModel):
     llm_provider: Literal["groq", "gemini", "ollama", "local"] = "groq"
     llm_model: str = ""  # empty = provider default
     embedding_model: str = "BAAI/bge-small-en-v1.5"
-    chunking: Literal["fixed", "recursive", "structure", "parent_child"] = "parent_child"
+    chunking: Literal["fixed", "recursive", "structure", "parent_child"] = "fixed"  # won the dev ablation
     vector_store: Literal["faiss", "chroma"] = "faiss"
     faiss_index: Literal["flat", "hnsw"] = "flat"
     retrieval_mode: Literal["dense", "bm25", "hybrid"] = "hybrid"
@@ -67,7 +67,9 @@ class RuntimeConfig(BaseModel):
     query_rewrite: bool = True
     use_filters: bool = True
     prompt_version: str = "v2"
-    abstain_threshold: float = 0.2  # min sigmoid(rerank score) of best chunk; calibrated on the dev split
+    abstain_threshold: float = (
+        0.1073  # min sigmoid(rerank score) of the best chunk; calibrated on the dev split
+    )
     abstain_threshold_dense: float = 0.55  # used when the reranker is off (top cosine similarity)
     collections: list[str] = ["engineering"]
     sql_route: bool = True  # analytical questions -> text-to-SQL (feature K)
