@@ -16,6 +16,7 @@ dependencies = [
     "langchain-google-genai>=4.4",
     "langchain-ollama>=1.1",
     "torch>=2.8",
+    "torchvision>=0.24",  # direct dep so it comes from the CPU index too (EasyOCR needs it)
     "transformers>=5.0",
     "sentence-transformers>=6.0",
     "faiss-cpu>=1.12",
