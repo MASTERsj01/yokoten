@@ -7,6 +7,7 @@ local           Hugging Face Transformers model in-process (CPU works; no key, n
 
 import hashlib
 import json
+import re
 import threading
 import time
 from collections.abc import Iterator
@@ -22,13 +23,8 @@ from yokoten.db import LlmCache, session
 
 PROVIDERS = {
     "groq": {
-        "default": "llama-3.3-70b-versatile",
-        "prefer": [
-            "llama-3.3-70b-versatile",
-            "openai/gpt-oss-120b",
-            "meta-llama/llama-4-scout-17b-16e-instruct",
-            "llama-3.1-8b-instant",
-        ],
+        "default": "openai/gpt-oss-120b",
+        "prefer": ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"],  # Groq catalogue 2026-09
         "min_interval_s": 2.1,
     },
     "gemini": {
@@ -190,9 +186,21 @@ def _throttle(provider: str) -> None:
         _last_call[provider] = time.time()
 
 
+# Some models (gpt-oss) write citations as 【1】 or 【1†L4-L6】 and use non-breaking hyphens/spaces ("FOLLOW-UP",
+# "P-EPS-2102"). The pipeline, the checker and the UI all parse plain ASCII "[n]", so every call's text is folded here.
+_ASCII = str.maketrans(
+    {"\u3010": "[", "\u3011": "]", "\u2010": "-", "\u2011": "-", "\u00a0": " ", "\u202f": " "}
+)
+_CITE_EXTRA = re.compile(r"\[(\d+)\u2020[^\]\n]*\]")
+
+
+def _fold(text: str) -> str:
+    return _CITE_EXTRA.sub(r"[\1]", text.translate(_ASCII))
+
+
 def _text(chunk) -> str:
     t = getattr(chunk, "text", None)  # langchain-core 1.x: str-like accessor over text content blocks
-    return str(t) if isinstance(t, str) else str(chunk.content)
+    return (t if isinstance(t, str) else str(chunk.content)).translate(_ASCII)  # 1:1 chars, safe per chunk
 
 
 @dataclass
@@ -229,24 +237,32 @@ def stream(
         with session() as s:
             hit = s.get(LlmCache, key)
         if hit:
-            call.cached, call.text = True, hit.response
+            call.cached, call.text = True, _fold(hit.response)
             call.input_tokens, call.output_tokens = hit.usage.get("input", 0), hit.usage.get("output", 0)
             call.first_token_ms = (time.perf_counter() - t0) * 1000
-            for i in range(0, len(hit.response), 24):
-                yield hit.response[i : i + 24]
+            for i in range(0, len(call.text), 24):
+                yield call.text[i : i + 24]
             call.ms = (time.perf_counter() - t0) * 1000
             return
     _throttle(provider)
     full = None
     parts: list[str] = []
+    pending = ""
     for chunk in chat_model(provider, model, max_tokens).stream(messages):
         full = chunk if full is None else full + chunk
-        t = _text(chunk)
+        pending += _text(chunk)
+        # hold back an unfinished "[..." (short) so a citation marker split across chunks is folded whole
+        cut = pending.rfind("[")
+        keep = cut if cut != -1 and "]" not in pending[cut:] and len(pending) - cut < 32 else len(pending)
+        t, pending = _fold(pending[:keep]), pending[keep:]
         if t:
             if call.first_token_ms is None:
                 call.first_token_ms = (time.perf_counter() - t0) * 1000
             parts.append(t)
             yield t
+    if pending:
+        parts.append(_fold(pending))
+        yield parts[-1]
     call.text = "".join(parts)
     usage = getattr(full, "usage_metadata", None) or {}
     prompt_chars = sum(len(str(m.content)) for m in messages)

@@ -5,7 +5,10 @@ with per-IP rate limits. Nothing here runs automatically - each step below is do
 
 ## 1. Backend — Hugging Face Space
 
-1. Create a free Hugging Face account (sign in with GitHub) and a new **Space**: SDK *Docker*, hardware *CPU basic*,
+> Since 2026 Hugging Face requires a **PRO subscription** for Docker (and Gradio) Spaces, including on free CPU
+> hardware - creating one on a free account returns `402 Payment Required`. Only static Spaces stay free.
+
+1. Create a Hugging Face account with PRO and a new **Space**: SDK *Docker*, hardware *CPU basic*,
    name e.g. `yokoten-api`.
 2. In the Space settings → *Variables and secrets*, add the secret `GROQ_API_KEY` (and optionally `GOOGLE_API_KEY`).
 3. Stage the Space folder locally (copies the backend, bakes corpus + indexes + models into the image at build time,

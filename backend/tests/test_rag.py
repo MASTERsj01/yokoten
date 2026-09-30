@@ -42,3 +42,27 @@ def test_sentence_split_and_confidence():
     )
     assert len(s) == 3
     assert confidence(1.0, 1.0) == (1.0, "high") and confidence(0.2, 0.0)[1] == "low"
+
+
+def test_llm_stream_folds_model_quirks(monkeypatch):
+    """gpt-oss style output: 【n】 / 【n†Lx-Ly】 citations split across chunks, non-breaking hyphens."""
+    from types import SimpleNamespace
+
+    from langchain_core.messages import AIMessageChunk
+
+    from yokoten.db import init_db
+    from yokoten.rag import llm
+
+    init_db()  # stream() writes the LLM cache
+    lb, rb, dag, nbh = chr(0x3010), chr(0x3011), chr(0x2020), chr(0x2011)
+    chunks = [
+        "Grease change on P",
+        nbh + "EPS",
+        nbh + "2102" + lb + "1" + dag + "L4",
+        "-L6" + rb + lb + "2" + rb,
+    ]
+    chunks += [".\nFOLLOW", nbh + "UP QUESTIONS:"]
+    fake = SimpleNamespace(stream=lambda messages: (AIMessageChunk(content=c) for c in chunks))
+    monkeypatch.setattr(llm, "chat_model", lambda *a: fake)
+    out = "".join(llm.stream([], "local", "fake", use_cache=False))
+    assert out == "Grease change on P-EPS-2102[1][2].\nFOLLOW-UP QUESTIONS:"
