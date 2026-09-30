@@ -40,12 +40,16 @@ export default function LibraryPage() {
     api<DocSummary[]>("/api/documents")
       .then(setDocs)
       .catch((e) => setError(e.message));
-    api<Report>("/api/ingestion/report").then(setReport).catch(() => {});
+    api<Report>("/api/ingestion/report")
+      .then(setReport)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     load();
-    api<Catalog>("/api/catalog").then(setCatalog).catch(() => {});
+    api<Catalog>("/api/catalog")
+      .then(setCatalog)
+      .catch(() => {});
   }, [load]);
 
   const busy = docs?.some((d) => d.status === "pending" || d.status === "processing");
@@ -95,7 +99,7 @@ export default function LibraryPage() {
     <div className="mx-auto w-full max-w-7xl flex-1 space-y-6 px-4 py-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Document library</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Everything the copilot can cite. Upload PDF, DOCX, XLSX, CSV, Markdown or scanned images - they are parsed,
           OCR&apos;d, chunked and indexed automatically.
         </p>
@@ -106,7 +110,7 @@ export default function LibraryPage() {
           <Card key={s.label} className="gap-1 py-3">
             <CardContent className="px-3">
               <div className="text-xl font-semibold tabular-nums">{s.value ?? "—"}</div>
-              <div className="text-xs text-muted-foreground">{s.label}</div>
+              <div className="text-muted-foreground text-xs">{s.label}</div>
             </CardContent>
           </Card>
         ))}
@@ -124,7 +128,7 @@ export default function LibraryPage() {
             multiple
             accept={ACCEPT}
             onChange={(e) => upload(e.target.files)}
-            className="text-sm file:mr-3 file:rounded-md file:border file:bg-background file:px-3 file:py-1.5 file:text-sm"
+            className="file:bg-background text-sm file:mr-3 file:rounded-md file:border file:px-3 file:py-1.5 file:text-sm"
             aria-label="Choose files to upload"
             disabled={uploading}
           />
@@ -141,7 +145,7 @@ export default function LibraryPage() {
             </SelectContent>
           </Select>
           {uploading && (
-            <span className="flex items-center gap-1 text-sm text-muted-foreground">
+            <span className="text-muted-foreground flex items-center gap-1 text-sm">
               <UploadIcon className="size-4 animate-bounce" /> Uploading…
             </span>
           )}
@@ -149,7 +153,12 @@ export default function LibraryPage() {
       </Card>
 
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Input placeholder="Filter by ID, title or project" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Filter documents" />
+        <Input
+          placeholder="Filter by ID, title or project"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label="Filter documents"
+        />
         <Select value={type} onValueChange={setType}>
           <SelectTrigger className="w-full sm:w-60" aria-label="Document type">
             <SelectValue />
@@ -165,7 +174,7 @@ export default function LibraryPage() {
         </Select>
       </div>
 
-      {error && <p className="text-sm text-destructive">Could not load documents: {error}</p>}
+      {error && <p className="text-destructive text-sm">Could not load documents: {error}</p>}
       {!docs && !error && <Skeleton className="h-96" />}
       {docs && (
         <div className="overflow-x-auto rounded-md border">
@@ -185,7 +194,7 @@ export default function LibraryPage() {
             <TableBody>
               {shown.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-muted-foreground py-8 text-center">
                     No documents match.
                   </TableCell>
                 </TableRow>
@@ -193,16 +202,19 @@ export default function LibraryPage() {
               {shown.map((d) => (
                 <TableRow key={d.rev_key}>
                   <TableCell className="max-w-96">
-                    <Link href={`/library/${encodeURIComponent(d.rev_key)}`} className="font-medium text-primary hover:underline">
+                    <Link
+                      href={`/library/${encodeURIComponent(d.rev_key)}`}
+                      className="text-primary font-medium hover:underline"
+                    >
                       {d.doc_id}
                     </Link>
-                    <div className="truncate text-xs text-muted-foreground" title={d.title}>
+                    <div className="text-muted-foreground truncate text-xs" title={d.title}>
                       {d.title}
                     </div>
                   </TableCell>
                   <TableCell className="text-xs">
                     {d.doc_type_label}
-                    <span className="ml-1 text-muted-foreground uppercase">{d.format}</span>
+                    <span className="text-muted-foreground ml-1 uppercase">{d.format}</span>
                   </TableCell>
                   <TableCell>
                     {d.revision}
@@ -213,7 +225,9 @@ export default function LibraryPage() {
                     )}
                   </TableCell>
                   <TableCell>{d.year ?? "—"}</TableCell>
-                  <TableCell className="text-xs">{d.component ? catalog?.components[d.component]?.name ?? d.component : "—"}</TableCell>
+                  <TableCell className="text-xs">
+                    {d.component ? (catalog?.components[d.component]?.name ?? d.component) : "—"}
+                  </TableCell>
                   <TableCell className="text-xs">{d.classification}</TableCell>
                   <TableCell>
                     <StatusBadge status={d.status} />

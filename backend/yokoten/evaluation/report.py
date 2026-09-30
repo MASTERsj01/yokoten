@@ -388,6 +388,38 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
             ),
             "",
         ]
+    if run.get("sql_experiment"):
+        e = run["sql_experiment"]
+        L += [
+            "## 6b. Text-to-SQL routing for analytical questions",
+            "",
+            "Counting / ranking questions answered from the structured tables (document metadata + FMEA rows) "
+            "instead of top-k passages; the generated SQL is shown in the trace.",
+            "",
+            _table(
+                ["Route", "n", "Correctness"],
+                [[k.replace("_", " "), v["n"], _p(v["correctness"])] for k, v in e.items()],
+            ),
+            "",
+        ]
+    if run.get("public"):
+        pub = run["public"]
+        L += [
+            "## 8b. Public NHTSA recalls collection",
+            "",
+            f"{pub['n']} questions over a separate collection of real NHTSA recall campaigns (US Government data, "
+            "public domain; filtered to 2021+ campaigns for cooling, fuel, power-train, electrical, steering and "
+            "wiper systems). Headline numbers above use only the synthetic golden set.",
+            "",
+            _table(
+                ["Category", "n", "R@1", "R@5", "MRR"],
+                [
+                    [c, m["n"], _p(m["recall@1"]), _p(m["recall@5"]), _n(m["mrr"])]
+                    for c, m in sorted(pub["by_category"].items())
+                ],
+            ),
+            "",
+        ]
     L += [
         "## 9. Error analysis",
         "",
@@ -423,3 +455,48 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
     ]
     path.write_text("\n".join(L), "utf-8")
     return path
+
+
+def update_readme(run: dict, path: Path = ROOT / "README.md") -> None:
+    """Replace the block between the results markers in README.md with numbers from this run."""
+    start, end = "<!-- results:start -->", "<!-- results:end -->"
+    if not path.exists():
+        return
+    text = path.read_text("utf-8")
+    if start not in text or end not in text:
+        return
+    rows = [
+        [
+            h["label"],
+            (
+                "not yet measured"
+                if h["value"] is None
+                else f"{h['value'] / 1000:.2f} s"
+                if h["format"] == "ms"
+                else _p(h["value"])
+            ),
+        ]
+        for h in run["headline"]
+    ]
+    gens = run["generation"]["configs"]
+    gen_note = (
+        f"Generation: `{gens[0]['provider']}/{gens[0]['model']}` on {run['generation']['n_questions']} "
+        f"stratified test questions."
+        if gens
+        else "Generation not measured in this run."
+    )
+    block = "\n".join(
+        [
+            start,
+            "",
+            _table(["Metric (test split)", "Value"], rows),
+            "",
+            f"Run `{run['run_id']}` · {run['n_questions']} test questions · retrieval config "
+            f"`{run['config']['retrieval_mode']} / {run['config']['chunking']} / "
+            f"{run['config']['embedding_model'].split('/')[-1]} / rerank {'on' if run['config']['reranker'] else 'off'}`. "
+            f"{gen_note} Full details: [docs/EVALUATION_REPORT.md](docs/EVALUATION_REPORT.md).",
+            "",
+            end,
+        ]
+    )
+    path.write_text(text[: text.index(start)] + block + text[text.index(end) + len(end) :], "utf-8")

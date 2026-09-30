@@ -274,3 +274,16 @@ def invoke(
     for _ in stream(messages, provider, model, call, use_cache, max_tokens):
         pass
     return call
+
+
+def chain(prompt, provider: str, model: str, max_tokens: int = 700):
+    """LCEL chain `prompt | model | parser` whose model step goes through the cached, throttled call above."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_core.runnables import RunnableLambda
+
+    def call_model(prompt_value) -> AIMessage:
+        c = invoke(prompt_value.to_messages(), provider, model, max_tokens=max_tokens)
+        return AIMessage(content=c.text, response_metadata={"cached": c.cached, "model": model})
+
+    return prompt | RunnableLambda(call_model) | StrOutputParser()

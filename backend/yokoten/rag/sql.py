@@ -66,17 +66,18 @@ def run_sql(sql: str, role: str) -> tuple[list[str], list[list]]:
         con.close()
 
 
-def generate_sql(question: str, provider: str, model: str) -> tuple[str, llm.LlmCall]:
+def generate_sql(question: str, provider: str, model: str) -> str:
     g = glossary()
-    msgs = load_prompt("sql", "v1").format_messages(
-        question=question,
-        doc_types=", ".join(k for k in DOC_TYPE_LABEL if k not in ("recall", "other")),
-        components=", ".join(f"{k} ({v['name']})" for k, v in g["components"].items()),
-        product_lines=", ".join(g["product_lines"]),
-        plants=", ".join(f"{k} ({v[0].title()})" for k, v in g["plants"].items()),
+    text = llm.chain(load_prompt("sql", "v1"), provider, model, max_tokens=250).invoke(
+        {
+            "question": question,
+            "doc_types": ", ".join(k for k in DOC_TYPE_LABEL if k not in ("recall", "other")),
+            "components": ", ".join(f"{k} ({v['name']})" for k, v in g["components"].items()),
+            "product_lines": ", ".join(g["product_lines"]),
+            "plants": ", ".join(f"{k} ({v[0].title()})" for k, v in g["plants"].items()),
+        }
     )
-    call = llm.invoke(msgs, provider, model, max_tokens=250)
-    return extract_sql(call.text), call
+    return extract_sql(text)
 
 
 def format_result(cols: list[str], rows: list[list]) -> str:
@@ -85,3 +86,37 @@ def format_result(cols: list[str], rows: list[list]) -> str:
     lines = [" | ".join(cols)] + [" | ".join("" if v is None else str(v) for v in r) for r in rows[:20]]
     more = f"\n({len(rows)} rows in total)" if len(rows) > 20 else ""
     return "\n".join(lines) + more
+
+
+def answer_rows(question: str, role: str, provider: str, model: str) -> dict:
+    """Generate + run the SQL. Never raises: errors are returned so the pipeline can fall back to retrieval."""
+    try:
+        sql = generate_sql(question, provider, model)
+    except SqlError as e:
+        return {"query": None, "columns": [], "rows": [], "error": str(e)}
+    try:
+        cols, rows = run_sql(sql, role)
+    except SqlError as e:
+        return {"query": sql, "columns": [], "rows": [], "error": str(e)}
+    return {
+        "query": sql,
+        "columns": cols,
+        "rows": rows,
+        "n_rows": len(rows),
+        "error": None,
+        "result_text": format_result(cols, rows),
+    }
+
+
+def check_answer(answer: str, info: dict) -> dict:
+    """SQL answers are checked for consistency with the result table: every number stated must appear in it."""
+    nums = set(re.findall(r"\b\d+(?:\.\d+)?\b", answer.replace(",", "")))
+    table = {str(v) for r in info["rows"] for v in r if v is not None}
+    table |= {str(int(v)) for r in info["rows"] for v in r if isinstance(v, float) and v.is_integer()}
+    ok = [n for n in nums if n in table or any(n in str(v) for v in table)]
+    return {
+        "sentences": [],
+        "faithfulness": len(ok) / len(nums) if nums else 1.0,
+        "citation_precision": None,
+        "unsupported_numbers": sorted(nums - set(ok)),
+    }

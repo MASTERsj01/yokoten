@@ -156,10 +156,9 @@ def _judge_provider(gen_provider: str) -> tuple[str, str] | None:
 
 
 def judge(q: dict, answer: str, jp: tuple[str, str]) -> float | None:
-    msgs = load_prompt("judge", "v1").format_messages(
-        question=q["question"], reference=q["reference_answer"], candidate=answer
+    text = llm.chain(load_prompt("judge", "v1"), *jp, max_tokens=120).invoke(
+        {"question": q["question"], "reference": q["reference_answer"], "candidate": answer}
     )
-    text = llm.invoke(msgs, *jp, max_tokens=120).text
     m = re.search(r'"score"\s*:\s*([01](?:\.5)?|0?\.5)', text)
     return float(m.group(1)) if m else None
 
@@ -313,6 +312,24 @@ def run_ocr(engines: list[str], log=print) -> dict:
     return out
 
 
+# ------------------------------------------------------------------ public NHTSA collection
+def run_public(cfg: RuntimeConfig) -> dict | None:
+    path = ROOT / "eval" / "public_golden.jsonl"
+    if not path.exists():
+        return None
+    qs = [json.loads(x) | {"split": "test"} for x in path.read_text("utf-8").splitlines() if x.strip()]
+    rows = run_retrieval(cfg.model_copy(update={"collections": ["public_recalls"]}), qs)
+    if not any(r.get("ranked") for r in rows):
+        return None  # collection not ingested
+    s = summarize_retrieval(rows)
+    return {
+        "n": len(qs),
+        "overall": s["overall"],
+        "by_category": s["by_category"],
+        "latency_p50_ms": s["latency_p50_ms"],
+    }
+
+
 # ------------------------------------------------------------------ failure analysis
 def explain_failures(
     gen_rows: list[dict], ret_rows: dict[str, dict], golden: dict[str, dict], threshold: float, n: int = 8
@@ -392,7 +409,9 @@ def run(
 
     init_db()
     t_start = time.perf_counter()
-    base = load_runtime()
+    base = load_runtime().model_copy(
+        update={"use_verified": False}
+    )  # demo-time SME answers must not leak into eval
     if provider:
         base = base.model_copy(update={"llm_provider": provider, "llm_model": ""})
     dev, test = load_golden("dev"), load_golden("test")
@@ -423,7 +442,7 @@ def run(
     )
 
     # 4. generation on the top configurations (test split)
-    gen_configs, failures = [], []
+    gen_configs, failures, sql_exp = [], [], {}
     gen_questions = stratified(test, gen_limit)
     provider_used, model_used = llm.resolve(chosen.llm_provider, chosen.llm_model)
     judge_used = _judge_provider(provider_used)
@@ -459,7 +478,19 @@ def run(
                     "rows": rows,
                 }
             )
+        # K: analytical questions with the text-to-SQL route on vs off (all splits: only 8 such questions exist)
+        analytical = [q for q in dev + test if q["category"] == "analytical"]
+        sql_exp = {}
+        for name, flag in (("sql_on", True), ("sql_off", False)):
+            rows = run_generation(chosen.model_copy(update={"sql_route": flag}), analytical, log)
+            sql_exp[name] = {
+                "correctness": mean(r["correctness"] for r in rows),
+                "n": len(rows),
+                "rows": [{k: r[k] for k in ("id", "answer", "correctness")} for r in rows],
+            }
         failures = explain_failures(gen_configs[0]["rows"], {r["id"]: r for r in test_rows}, golden, th)
+
+    public = run_public(chosen)
 
     # 5. OCR engines
     ocr_res = run_ocr(["tesseract", "easyocr"], log) if ocr_eval else {}
@@ -583,6 +614,8 @@ def run(
         if ocr_res
         else None,
         "failures": failures,
+        "public": public,
+        "sql_experiment": sql_exp,
         "duration_s": round(time.perf_counter() - t_start, 1),
         "hardware": {"device": device()},
     }

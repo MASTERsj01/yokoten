@@ -23,13 +23,14 @@ const FACETS: { key: string; label: string }[] = [
   { key: "project", label: "Project" },
   { key: "year", label: "Year" },
   { key: "plant", label: "Plant" },
+  { key: "collection", label: "Collection" },
 ];
 const EXAMPLES = ["solder voiding power module", "INV-70455", "seal compression set", "SWAAT corrosion test"];
 
 function Score({ label, value, rank, hint }: { label: string; value: string; rank?: number | null; hint: string }) {
   return (
     <div className="rounded border px-2 py-1" title={hint}>
-      <div className="text-[0.65rem] text-muted-foreground uppercase">{label}</div>
+      <div className="text-muted-foreground text-[0.65rem] uppercase">{label}</div>
       <div className="tabular-nums">
         {value}
         {rank != null && <span className="text-muted-foreground"> #{rank}</span>}
@@ -54,8 +55,12 @@ export default function SearchPage() {
   const [showFacets, setShowFacets] = useState(false);
 
   useEffect(() => {
-    api<Facets>("/api/facets").then(setFacets).catch((e) => setError(e.message));
-    api<Catalog>("/api/catalog").then(setCatalog).catch(() => {});
+    api<Facets>("/api/facets")
+      .then(setFacets)
+      .catch((e) => setError(e.message));
+    api<Catalog>("/api/catalog")
+      .then(setCatalog)
+      .catch(() => {});
   }, []);
 
   const label = (key: string, v: string | number) => {
@@ -66,6 +71,7 @@ export default function SearchPage() {
     }
     if (key === "product_line") return catalog?.product_lines[String(v)] ?? String(v);
     if (key === "plant") return catalog?.plants[String(v)] ?? String(v);
+    if (key === "collection") return v === "public_recalls" ? "NHTSA recalls (public)" : "Norvane engineering";
     return String(v);
   };
 
@@ -109,7 +115,7 @@ export default function SearchPage() {
     <div className="mx-auto w-full max-w-7xl flex-1 px-4 py-6">
       <div className="mb-4 space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Semantic search</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Hybrid retrieval: dense embeddings + BM25, fused with Reciprocal Rank Fusion, re-ranked by a cross-encoder.
         </p>
       </div>
@@ -121,7 +127,7 @@ export default function SearchPage() {
         }}
       >
         <div className="relative flex-1">
-          <SearchIcon className="absolute top-2.5 left-2.5 size-4 text-muted-foreground" />
+          <SearchIcon className="text-muted-foreground absolute top-2.5 left-2.5 size-4" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -171,7 +177,9 @@ export default function SearchPage() {
           {facets &&
             FACETS.map(({ key, label: title }) => (
               <fieldset key={key} className="space-y-1.5">
-                <legend className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">{title}</legend>
+                <legend className="text-muted-foreground mb-1 text-xs font-medium tracking-wide uppercase">
+                  {title}
+                </legend>
                 <div className="max-h-44 space-y-1 overflow-y-auto pr-1">
                   {(facets[key] ?? []).map((f) => {
                     const id = `f-${key}-${f.value}`;
@@ -185,7 +193,7 @@ export default function SearchPage() {
                         <Label htmlFor={id} className="flex-1 truncate font-normal">
                           {label(key, f.value)}
                         </Label>
-                        <span className="text-xs text-muted-foreground tabular-nums">{f.count}</span>
+                        <span className="text-muted-foreground text-xs tabular-nums">{f.count}</span>
                       </div>
                     );
                   })}
@@ -195,9 +203,9 @@ export default function SearchPage() {
         </aside>
 
         <section className="min-w-0 space-y-3" aria-live="polite">
-          {error && <p className="text-sm text-destructive">Search failed: {error}</p>}
+          {error && <p className="text-destructive text-sm">Search failed: {error}</p>}
           {results === null && !loading && (
-            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            <div className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
               <p>Try a query such as</p>
               <div className="mt-2 flex flex-wrap justify-center gap-2">
                 {EXAMPLES.map((q) => (
@@ -218,24 +226,22 @@ export default function SearchPage() {
           )}
           {loading && Array.from({ length: 4 }, (_, i) => <Skeleton key={i} className="h-32" />)}
           {results && !loading && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               {results.length} results in {took.toFixed(0)} ms
             </p>
           )}
           {results && !loading && results.length === 0 && (
-            <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            <p className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
               No matching passages. Remove a filter or rephrase the query.
             </p>
           )}
           {!loading &&
             results?.map((r) => (
-              <article key={r.chunk_id} className="space-y-2 rounded-lg border bg-card p-4">
+              <article key={r.chunk_id} className="bg-card space-y-2 rounded-lg border p-4">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <button
-                    className="text-left font-medium text-primary hover:underline"
-                    onClick={() =>
-                      setViewer({ ...r, snippet: r.text, text: r.text, superseded_by: null })
-                    }
+                    className="text-primary text-left font-medium hover:underline"
+                    onClick={() => setViewer({ ...r, snippet: r.text, text: r.text, superseded_by: null })}
                   >
                     {r.title}
                   </button>
@@ -245,16 +251,30 @@ export default function SearchPage() {
                     {!r.is_latest && <Badge variant="destructive">superseded</Badge>}
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   {[r.section, r.page && `page ${r.page}`, r.year, r.project, r.plant && label("plant", r.plant)]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
                 <p className="line-clamp-4 text-sm whitespace-pre-line">{highlightTerms(r.text, terms)}</p>
                 <div className="flex flex-wrap gap-1.5 text-xs">
-                  <Score label="Dense" value={r.scores.dense?.toFixed(3) ?? "—"} rank={r.scores.dense_rank} hint="Cosine similarity (Sentence Transformers)" />
-                  <Score label="BM25" value={r.scores.bm25?.toFixed(1) ?? "—"} rank={r.scores.bm25_rank} hint="Lexical BM25 score" />
-                  <Score label="RRF" value={r.scores.fused.toFixed(4)} hint="Reciprocal Rank Fusion of dense + BM25 ranks" />
+                  <Score
+                    label="Dense"
+                    value={r.scores.dense?.toFixed(3) ?? "—"}
+                    rank={r.scores.dense_rank}
+                    hint="Cosine similarity (Sentence Transformers)"
+                  />
+                  <Score
+                    label="BM25"
+                    value={r.scores.bm25?.toFixed(1) ?? "—"}
+                    rank={r.scores.bm25_rank}
+                    hint="Lexical BM25 score"
+                  />
+                  <Score
+                    label="RRF"
+                    value={r.scores.fused.toFixed(4)}
+                    hint="Reciprocal Rank Fusion of dense + BM25 ranks"
+                  />
                   <Score
                     label="Relevance"
                     value={r.scores.relevance != null ? `${Math.round(r.scores.relevance * 100)}%` : "—"}

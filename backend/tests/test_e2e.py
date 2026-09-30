@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from yokoten.config import ROOT, settings
 
-SUBSET_TYPES = {"8d", "lessons_learned", "supplier_quality", "test_report"}
+SUBSET_TYPES = {"8d", "lessons_learned", "supplier_quality", "test_report", "field_failure"}
 
 
 @pytest.fixture(scope="module")
@@ -111,3 +111,41 @@ def test_chat_answers_with_citations(client):
     done = events[-1][1]
     assert not done["abstained"] and "void" in done["answer"].lower()
     assert any(e == "token" for e, _ in events) and any(e == "sources" for e, _ in events)
+
+
+def test_role_based_access_control(client):
+    q = {"query": "Weibull shape parameter inverter power module solder fatigue field failure", "k": 10}
+    admin = {
+        r["doc_id"] for r in client.post("/api/search", json=q, headers={"X-Role": "admin"}).json()["results"]
+    }
+    newbie = {
+        r["doc_id"]
+        for r in client.post("/api/search", json=q, headers={"X-Role": "new_engineer"}).json()["results"]
+    }
+    assert any(d.startswith("FFA-INV") for d in admin)  # restricted (Kairo EV) field failure analysis
+    assert not any(d.startswith(("FFA-", "SQR-")) for d in newbie)
+    docs = client.get("/api/documents", headers={"X-Role": "new_engineer"}).json()
+    assert docs and all(d["classification"] in ("public", "internal") for d in docs)
+
+
+def test_sql_views_respect_role(client):
+    from yokoten.rag.sql import run_sql
+
+    sql = "SELECT COUNT(*) AS n FROM docs WHERE doc_type = 'supplier_quality'"
+    assert run_sql(sql, "admin")[1][0][0] > 0
+    assert (
+        run_sql(sql, "new_engineer")[1][0][0] == 0
+    )  # confidential documents are invisible to the SQL route too
+
+
+def test_sme_verification_loop(client):
+    from yokoten.config import load_runtime
+    from yokoten.rag.verified import match
+
+    q = "What was the warranty cost in US dollars of the headlamp recall?"
+    done = _sse(client.post("/api/chat", json={"question": q}).text)[-1][1]
+    body = {"trace_id": done["trace_id"], "status": "corrected", "corrected_answer": "No such recall exists."}
+    assert client.post("/api/verify", json=body, headers={"X-Role": "engineer"}).status_code == 403
+    assert client.post("/api/verify", json=body, headers={"X-Role": "quality_sme"}).status_code == 200
+    m = match(q, load_runtime())
+    assert m and m["status"] == "corrected" and m["similarity"] > 0.95

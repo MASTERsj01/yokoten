@@ -22,6 +22,7 @@ switch ($Task) {
     "data" { Invoke-Py yokoten gen-data @Rest }
     "ingest" { Invoke-Py yokoten ingest @Rest }
     "ask" { Invoke-Py yokoten ask @Rest }
+    "public" { Invoke-Py yokoten public-data @Rest }
     "eval" { Invoke-Py yokoten eval @Rest }
     "backend" { Invoke-Py uvicorn yokoten.api:app --reload --port 8000 }
     "frontend" { Invoke-Npm run dev }
@@ -34,6 +35,6 @@ switch ($Task) {
     "fmt" { Invoke-Py ruff check --fix .; Invoke-Py ruff format . }
     "build" { Invoke-Npm run build }
     default {
-        "Tasks: setup | data | ingest | ask ""question"" | eval | dev | backend | frontend | test | lint | fmt | build"
+        "Tasks: setup | data | ingest | public | ask ""question"" | eval | dev | backend | frontend | test | lint | fmt | build"
     }
 }

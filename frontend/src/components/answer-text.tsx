@@ -16,7 +16,7 @@ function inline(text: string, onCite?: (n: number) => void, citeLabel?: (n: numb
           type="button"
           onClick={() => onCite?.(n)}
           title={citeLabel?.(n) ?? `Source ${n}`}
-          className="mx-0.5 inline-flex h-4.5 min-w-4.5 translate-y-[-1px] items-center justify-center rounded bg-primary/12 px-1 align-baseline text-[0.7rem] font-semibold text-primary hover:bg-primary hover:text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="bg-primary/12 text-primary hover:bg-primary hover:text-primary-foreground focus-visible:ring-ring mx-0.5 inline-flex h-4.5 min-w-4.5 translate-y-[-1px] items-center justify-center rounded px-1 align-baseline text-[0.7rem] font-semibold focus-visible:ring-2 focus-visible:outline-none"
         >
           {n}
         </button>
@@ -49,7 +49,12 @@ export function AnswerText({
   const blocks: ReactNode[] = [];
   let list: ReactNode[] = [];
   const flush = () => {
-    if (list.length) blocks.push(<ul key={`ul${blocks.length}`} className="my-1 ml-5 list-disc space-y-1">{list}</ul>);
+    if (list.length)
+      blocks.push(
+        <ul key={`ul${blocks.length}`} className="my-1 ml-5 list-disc space-y-1">
+          {list}
+        </ul>,
+      );
     list = [];
   };
   lines.forEach((line, li) => {
@@ -74,7 +79,7 @@ export function AnswerText({
       parts.push(
         <span
           key={i}
-          className={cn(bad && "underline decoration-destructive/70 decoration-wavy underline-offset-4")}
+          className={cn(bad && "decoration-destructive/70 underline decoration-wavy underline-offset-4")}
           title={bad ? "Not supported by the cited sources (NLI check)" : undefined}
         >
           {inline(seg, onCite, citeLabel)}
@@ -98,7 +103,7 @@ export function AnswerText({
   return (
     <div className="space-y-2 text-[0.95rem]">
       {blocks}
-      {streaming && <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/60 align-middle" />}
+      {streaming && <span className="bg-foreground/60 ml-0.5 inline-block h-4 w-1.5 animate-pulse align-middle" />}
     </div>
   );
 }

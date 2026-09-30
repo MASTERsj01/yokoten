@@ -4,6 +4,9 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIcon,
+  BadgeCheckIcon,
+  DatabaseIcon,
+  PencilLineIcon,
   FileTextIcon,
   Loader2Icon,
   MessageSquarePlusIcon,
@@ -19,10 +22,20 @@ import { SourceViewer, type ViewerTarget } from "@/components/source-viewer";
 import { TracePanel } from "@/components/trace-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api";
+import { SME_ROLES, useRole } from "@/lib/role";
 import { postSSE } from "@/lib/sse";
-import type { Done, Meta, Source, Trace, Verification } from "@/lib/types";
+import type { Done, Meta, Source, SqlResult, Trace, Verification, VerifiedMatch } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Turn = {
@@ -36,7 +49,111 @@ type Turn = {
   done?: Done;
   error?: string;
   feedback?: number;
+  sql?: SqlResult;
+  verified?: VerifiedMatch;
+  sme?: string;
 };
+
+const viewable = (s: Source) => s.doc_type !== "sql" && s.doc_type !== "verified";
+
+function SqlTable({ sql }: { sql: SqlResult }) {
+  return (
+    <div className="bg-muted/30 space-y-2 rounded-md border p-3">
+      <p className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
+        <DatabaseIcon className="size-3.5" /> Answered from structured data (text-to-SQL, read-only)
+      </p>
+      <div className="max-h-64 overflow-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {sql.columns.map((c) => (
+                <TableHead key={c}>{c}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sql.rows.slice(0, 20).map((r, i) => (
+              <TableRow key={i}>
+                {r.map((v, j) => (
+                  <TableCell key={j} className="whitespace-normal">
+                    {v == null ? "—" : String(v)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <details className="text-xs">
+        <summary className="text-muted-foreground cursor-pointer">Show SQL</summary>
+        <pre className="bg-muted mt-1 overflow-x-auto rounded p-2">{sql.query}</pre>
+      </details>
+    </div>
+  );
+}
+
+function SmeActions({ turn, onDone }: { turn: Turn; onDone: (status: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState(turn.answer);
+  const [note, setNote] = useState("");
+  const submit = async (status: "verified" | "corrected") => {
+    try {
+      await api("/api/verify", {
+        method: "POST",
+        body: JSON.stringify({
+          trace_id: turn.done!.trace_id,
+          status,
+          corrected_answer: status === "corrected" ? text : null,
+          note,
+        }),
+      });
+      onDone(status);
+      setOpen(false);
+      toast.success(
+        status === "verified" ? "Answer verified - it will be reused for similar questions" : "Correction saved",
+      );
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
+  if (turn.sme) return <Badge variant="secondary">SME {turn.sme}</Badge>;
+  return (
+    <>
+      <Button variant="ghost" size="sm" onClick={() => submit("verified")} title="Mark as expert-verified">
+        <BadgeCheckIcon /> Verify
+      </Button>
+      <Button variant="ghost" size="sm" onClick={() => setOpen(true)} title="Correct this answer">
+        <PencilLineIcon /> Correct
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Correct the answer</DialogTitle>
+            <DialogDescription>
+              Your corrected answer is shown as an SME-verified source for similar questions.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} aria-label="Corrected answer" />
+          <Textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Note (optional)"
+            aria-label="Note"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => submit("corrected")} disabled={!text.trim()}>
+              Save correction
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 type SessionRow = { id: string; title: string; created_at: string };
 
@@ -101,7 +218,7 @@ function FeedbackBar({ turn, onDone }: { turn: Turn; onDone: (rating: number) =>
           }}
         >
           <input
-            className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm sm:w-64"
+            className="bg-background h-7 min-w-0 flex-1 rounded-md border px-2 text-sm sm:w-64"
             placeholder="What was wrong? (optional)"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
@@ -124,6 +241,7 @@ export default function ChatPage() {
   const [busy, setBusy] = useState(false);
   const [viewer, setViewer] = useState<ViewerTarget | null>(null);
   const [traceId, setTraceId] = useState<string | null>(null);
+  const role = useRole();
   const bottom = useRef<HTMLDivElement>(null);
   const abort = useRef<AbortController | null>(null);
 
@@ -156,10 +274,14 @@ export default function ChatPage() {
           if (event === "session") setSessionId((data as { session_id: string }).session_id);
           else if (event === "meta") patch(key, () => ({ meta: data as Meta }));
           else if (event === "sources") patch(key, () => ({ sources: data as Source[] }));
+          else if (event === "sql") patch(key, () => ({ sql: data as SqlResult }));
+          else if (event === "verified") patch(key, () => ({ verified: data as VerifiedMatch }));
           else if (event === "token") patch(key, (t) => ({ answer: t.answer + (data as { text: string }).text }));
           else if (event === "verification") patch(key, () => ({ verification: data as Verification }));
-          else if (event === "done") patch(key, () => ({ done: data as Done, answer: (data as Done).answer, streaming: false }));
-          else if (event === "error") patch(key, () => ({ error: (data as { message: string }).message, streaming: false }));
+          else if (event === "done")
+            patch(key, () => ({ done: data as Done, answer: (data as Done).answer, streaming: false }));
+          else if (event === "error")
+            patch(key, () => ({ error: (data as { message: string }).message, streaming: false }));
         },
         abort.current.signal,
       );
@@ -179,12 +301,22 @@ export default function ChatPage() {
       const m = msgs[i];
       if (m.role !== "user") continue;
       const a = msgs[i + 1];
-      const t: Turn = { key: `${id}-${i}`, question: m.content, answer: a?.content ?? "", streaming: false, sources: [] };
+      const t: Turn = {
+        key: `${id}-${i}`,
+        question: m.content,
+        answer: a?.content ?? "",
+        streaming: false,
+        sources: [],
+      };
       if (a?.trace_id) {
         try {
           const tr = await api<Trace>(`/api/traces/${a.trace_id}`);
           t.sources = tr.data.sources;
-          t.verification = { ...tr.data.verification, confidence: tr.confidence ?? 0, confidence_label: tr.confidence_label };
+          t.verification = {
+            ...tr.data.verification,
+            confidence: tr.confidence ?? 0,
+            confidence_label: tr.confidence_label,
+          };
           t.done = {
             trace_id: tr.id,
             answer: tr.answer,
@@ -217,13 +349,13 @@ export default function ChatPage() {
           <MessageSquarePlusIcon /> New chat
         </Button>
         <div className="flex-1 space-y-0.5 overflow-y-auto text-sm">
-          {sessions.length === 0 && <p className="p-2 text-muted-foreground">No conversations yet.</p>}
+          {sessions.length === 0 && <p className="text-muted-foreground p-2">No conversations yet.</p>}
           {sessions.map((s) => (
             <button
               key={s.id}
               onClick={() => openSession(s.id)}
               className={cn(
-                "w-full truncate rounded-md px-2 py-1.5 text-left hover:bg-accent",
+                "hover:bg-accent w-full truncate rounded-md px-2 py-1.5 text-left",
                 s.id === sessionId && "bg-accent",
               )}
               title={s.title}
@@ -241,8 +373,8 @@ export default function ChatPage() {
               <div className="space-y-2">
                 <h1 className="text-2xl font-semibold tracking-tight">Ask the engineering record</h1>
                 <p className="text-muted-foreground">
-                  Answers come only from Norvane&apos;s 8D reports, lessons learned, FMEAs, test reports, design reviews,
-                  ECNs, supplier quality reports and scanned drawings — each sentence cited to the exact page.
+                  Answers come only from Norvane&apos;s 8D reports, lessons learned, FMEAs, test reports, design
+                  reviews, ECNs, supplier quality reports and scanned drawings — each sentence cited to the exact page.
                 </p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
@@ -250,7 +382,7 @@ export default function ChatPage() {
                   <button
                     key={q}
                     onClick={() => send(q)}
-                    className="rounded-lg border p-3 text-left text-sm transition-colors hover:border-primary/50 hover:bg-accent"
+                    className="hover:border-primary/50 hover:bg-accent rounded-lg border p-3 text-left text-sm transition-colors"
                   >
                     {q}
                   </button>
@@ -264,32 +396,45 @@ export default function ChatPage() {
             const bySource = new Map(t.sources.map((s) => [s.n, s]));
             return (
               <article key={t.key} className="space-y-3">
-                <div className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-primary px-4 py-2 text-primary-foreground">
+                <div className="bg-primary text-primary-foreground ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm px-4 py-2">
                   {t.question}
                 </div>
-                <div className="space-y-3 rounded-2xl rounded-bl-sm border bg-card p-4">
+                <div className="bg-card space-y-3 rounded-2xl rounded-bl-sm border p-4">
                   {t.meta && t.meta.standalone !== t.question && (
-                    <p className="text-xs text-muted-foreground">Interpreted as: {t.meta.standalone}</p>
+                    <p className="text-muted-foreground text-xs">Interpreted as: {t.meta.standalone}</p>
                   )}
                   {t.error ? (
-                    <p className="text-sm text-destructive">Something went wrong: {t.error}</p>
+                    <p className="text-destructive text-sm">Something went wrong: {t.error}</p>
                   ) : t.answer ? (
                     <AnswerText
                       text={t.answer}
                       unsupported={t.streaming ? [] : unsupported}
                       streaming={t.streaming}
-                      onCite={(n) => bySource.get(n) && setViewer(toTarget(bySource.get(n)!))}
+                      onCite={(n) => {
+                        const src = bySource.get(n);
+                        if (src && viewable(src)) setViewer(toTarget(src));
+                      }}
                       citeLabel={(n) => bySource.get(n)?.title ?? `Source ${n}`}
                     />
                   ) : (
-                    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <p className="text-muted-foreground flex items-center gap-2 text-sm">
                       <Loader2Icon className="size-4 animate-spin" />
-                      {t.meta ? `Reading ${t.sources.length || ""} sources with ${t.meta.model}…` : "Searching the knowledge base…"}
+                      {t.meta
+                        ? `Reading ${t.sources.length || ""} sources with ${t.meta.model}…`
+                        : "Searching the knowledge base…"}
                     </p>
                   )}
 
+                  {t.verified && (
+                    <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
+                      <BadgeCheckIcon className="size-4" /> Uses an SME-{t.verified.status} answer to a similar question
+                      ({Math.round(t.verified.similarity * 100)}% match)
+                    </p>
+                  )}
+                  {t.sql && <SqlTable sql={t.sql} />}
+
                   {t.done?.abstained && (
-                    <div className="space-y-2 rounded-md bg-muted/50 p-3 text-sm">
+                    <div className="bg-muted/50 space-y-2 rounded-md p-3 text-sm">
                       <p className="flex items-center gap-1.5 font-medium">
                         <SearchXIcon className="size-4" /> Not answered — this is not in the knowledge base.
                       </p>
@@ -299,7 +444,10 @@ export default function ChatPage() {
                           <ul className="space-y-1">
                             {t.done.related.map((r) => (
                               <li key={r.rev_key}>
-                                <Link className="text-primary hover:underline" href={`/library/${encodeURIComponent(r.rev_key)}`}>
+                                <Link
+                                  className="text-primary hover:underline"
+                                  href={`/library/${encodeURIComponent(r.rev_key)}`}
+                                >
                                   {r.doc_id}
                                 </Link>{" "}
                                 — {r.title}
@@ -313,15 +461,15 @@ export default function ChatPage() {
 
                   {t.sources.length > 0 && !t.done?.abstained && (
                     <div className="flex flex-wrap gap-1.5">
-                      {t.sources.map((s) => (
+                      {t.sources.filter(viewable).map((s) => (
                         <button
                           key={s.n}
                           onClick={() => setViewer(toTarget(s))}
-                          className="flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs hover:bg-accent"
+                          className="hover:bg-accent flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs"
                           title={s.title}
                         >
-                          <span className="font-semibold text-primary">{s.n}</span>
-                          <FileTextIcon className="size-3 shrink-0 text-muted-foreground" />
+                          <span className="text-primary font-semibold">{s.n}</span>
+                          <FileTextIcon className="text-muted-foreground size-3 shrink-0" />
                           <span className="truncate">
                             {s.doc_id}
                             {s.page ? ` p.${s.page}` : ""}
@@ -344,7 +492,10 @@ export default function ChatPage() {
                         <Button variant="ghost" size="sm" onClick={() => setTraceId(t.done!.trace_id)}>
                           <ActivityIcon /> Trace
                         </Button>
-                        <span className="text-xs text-muted-foreground">{(t.done.latency_ms / 1000).toFixed(1)} s</span>
+                        <span className="text-muted-foreground text-xs">{(t.done.latency_ms / 1000).toFixed(1)} s</span>
+                        {SME_ROLES.includes(role) && !t.done.abstained && (
+                          <SmeActions turn={t} onDone={(st) => patch(t.key, () => ({ sme: st }))} />
+                        )}
                       </div>
                       <FeedbackBar turn={t} onDone={(r) => patch(t.key, () => ({ feedback: r }))} />
                     </div>
@@ -357,7 +508,7 @@ export default function ChatPage() {
                           key={s}
                           onClick={() => send(s)}
                           disabled={busy}
-                          className="rounded-full border px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                          className="text-muted-foreground hover:bg-accent hover:text-foreground rounded-full border px-3 py-1 text-xs"
                         >
                           {s}
                         </button>
@@ -372,7 +523,7 @@ export default function ChatPage() {
         </div>
 
         <form
-          className="sticky bottom-0 flex items-end gap-2 border-t bg-background/95 py-3 backdrop-blur"
+          className="bg-background/95 sticky bottom-0 flex items-end gap-2 border-t py-3 backdrop-blur"
           onSubmit={(e) => {
             e.preventDefault();
             send(input);

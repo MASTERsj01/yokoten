@@ -150,14 +150,13 @@ def summary(d: dict, provider: str | None = None, model: str | None = None) -> d
         return {"text": "", "sources": [], "provider": None, "model": None}
     provider, model = llm.resolve(provider, model)
     product = d["component"] or d["product_line"]
-    msgs = load_prompt("digest", "v1").format_messages(
-        product=product, context="\n\n".join(f"[{p['n']}] {p['text']}" for p in passages)
+    text = llm.chain(load_prompt("digest", "v1"), provider, model, max_tokens=600).invoke(
+        {"product": product, "context": "\n\n".join(f"[{p['n']}] {p['text']}" for p in passages)}
     )
-    call = llm.invoke(msgs, provider, model, max_tokens=600)
     return {
-        "text": call.text.strip(),
+        "text": text.strip(),
         "sources": passages,
         "provider": provider,
         "model": model,
-        "cached": call.cached,
+        "chain": "LCEL prompt | model | parser",
     }

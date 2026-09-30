@@ -73,7 +73,7 @@ def cmd_ask(args):
 
 def cmd_eval(args):
     from yokoten.evaluation.harness import RESULTS, run
-    from yokoten.evaluation.report import write_report
+    from yokoten.evaluation.report import update_readme, write_report
 
     if args.report_only:
         result = json.loads((RESULTS / "latest.json").read_text("utf-8"))
@@ -86,6 +86,7 @@ def cmd_eval(args):
             provider=args.provider,
         )
     path = write_report(result)
+    update_readme(result)
     for h in result["headline"]:
         v = h["value"]
         shown = (
@@ -93,6 +94,23 @@ def cmd_eval(args):
         )
         print(f"{h['label']:24s} {shown}")
     print(f"report -> {path}")
+
+
+def cmd_public(args):
+    import urllib.request
+
+    from yokoten.datagen.public import URL, build
+    from yokoten.ingest.pipeline import ingest_corpus
+
+    raw = settings.data_dir / "public" / "raw" / "FLAT_RCL_POST_2010.zip"
+    if not raw.exists():
+        raw.parent.mkdir(parents=True, exist_ok=True)
+        print(f"downloading {URL} (US Government work, public domain)")
+        urllib.request.urlretrieve(URL, raw)
+    stats = build(raw, settings.data_dir / "public", ROOT / "eval" / "public_golden.jsonl", n=args.n)
+    print(json.dumps(stats, indent=2))
+    report = ingest_corpus(settings.data_dir / "public", collection="public_recalls", ner=False)
+    print(json.dumps(report["run"], indent=2, default=str))
 
 
 def main(argv=None):
@@ -131,6 +149,9 @@ def main(argv=None):
         "--report-only", action="store_true", help="re-render docs/EVALUATION_REPORT.md from latest.json"
     )
     e.set_defaults(func=cmd_eval)
+    pd = sub.add_parser("public-data", help="download + ingest the NHTSA recalls collection (public domain)")
+    pd.add_argument("--n", type=int, default=1500, help="number of recall campaigns to keep")
+    pd.set_defaults(func=cmd_public)
     args = ap.parse_args(argv)
     args.func(args)
 

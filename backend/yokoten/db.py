@@ -159,6 +159,20 @@ class Feedback(SQLModel, table=True):
     created_at: datetime = Field(default_factory=now)
 
 
+class VerifiedAnswer(SQLModel, table=True):
+    """SME-verified or corrected answers (feature M); similar future questions get them as a boosted source."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    trace_id: str = Field(index=True)
+    question: str
+    standalone: str
+    answer: str
+    status: str = "verified"  # verified | corrected
+    note: str = ""
+    role: str = "quality_sme"
+    created_at: datetime = Field(default_factory=now)
+
+
 class EvalRun(SQLModel, table=True):
     id: str = Field(primary_key=True)
     summary: dict = Field(default_factory=dict, sa_type=JSON)

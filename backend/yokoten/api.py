@@ -6,6 +6,7 @@ import time
 import uuid
 from collections import defaultdict, deque
 from collections.abc import Iterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
@@ -35,7 +36,42 @@ from yokoten.domain import DEFAULT_ROLE, DOC_TYPE_LABEL, ROLE_ACCESS
 from yokoten.ingest.loaders import SUPPORTED
 
 init_db()
-app = FastAPI(title="Yokoten API", version=__version__, description="Engineering lessons-learned copilot")
+BOOTSTRAP = {"running": False, "error": None}
+
+
+def _bootstrap() -> None:
+    """First start with an empty database: generate the demo corpus (if missing) and ingest it."""
+    from yokoten.config import ROOT
+    from yokoten.ingest.pipeline import ingest_corpus
+
+    BOOTSTRAP["running"] = True
+    try:
+        if not (settings.corpus_dir / "manifest.json").exists():
+            from yokoten.datagen import generate
+
+            generate(settings.corpus_dir, ROOT / "eval" / "golden.jsonl")
+        ingest_corpus(log=lambda m: None)
+    except Exception as e:  # visible in /api/health
+        BOOTSTRAP["error"] = f"{type(e).__name__}: {e}"
+    finally:
+        BOOTSTRAP["running"] = False
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    with session() as s:
+        empty = s.exec(select(func.count()).select_from(Document)).one() == 0
+    if settings.auto_ingest and empty:
+        threading.Thread(target=_bootstrap, daemon=True).start()
+    yield
+
+
+app = FastAPI(
+    title="Yokoten API",
+    version=__version__,
+    description="Engineering lessons-learned copilot",
+    lifespan=lifespan,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
@@ -90,6 +126,8 @@ def health() -> dict:
         "demo_mode": settings.demo_mode,
         "documents": n_docs,
         "ready": n_ready,
+        "bootstrapping": BOOTSTRAP["running"],
+        "bootstrap_error": BOOTSTRAP["error"],
         "providers": llm.available(),
         "device": device(),
     }
@@ -689,3 +727,96 @@ def eval_runs() -> list[dict]:
 
     with session() as s:
         return [r.model_dump() for r in s.exec(select(EvalRun).order_by(EvalRun.created_at.desc())).all()]
+
+
+# ------------------------------------------------------------------ SME verification loop + feedback analytics
+SME_ROLES = ("quality_sme", "admin")
+
+
+class VerifyIn(BaseModel):
+    trace_id: str
+    status: str = Field(pattern="^(verified|corrected)$")
+    corrected_answer: str | None = Field(default=None, max_length=4000)
+    note: str = Field(default="", max_length=1000)
+
+
+@app.post("/api/verify")
+def verify_answer(body: VerifyIn, x_role: RoleHeader = None) -> dict:
+    from yokoten.db import VerifiedAnswer
+
+    _writable()
+    role = role_of(x_role)
+    if role not in SME_ROLES:
+        raise HTTPException(403, "Only quality SMEs and admins can verify answers.")
+    with session() as s:
+        t = s.get(Trace, body.trace_id)
+        if not t:
+            raise HTTPException(404, "trace not found")
+        if body.status == "corrected" and not (body.corrected_answer or "").strip():
+            raise HTTPException(400, "a corrected answer is required")
+        v = VerifiedAnswer(
+            trace_id=t.id,
+            question=t.question,
+            standalone=t.standalone or t.question,
+            answer=(body.corrected_answer or t.answer).strip(),
+            status=body.status,
+            note=body.note,
+            role=role,
+        )
+        s.add(v)
+        s.commit()
+        return v.model_dump()
+
+
+@app.get("/api/verified")
+def list_verified() -> list[dict]:
+    from yokoten.db import VerifiedAnswer
+
+    with session() as s:
+        return [
+            v.model_dump() for v in s.exec(select(VerifiedAnswer).order_by(VerifiedAnswer.id.desc())).all()
+        ]
+
+
+@app.get("/api/feedback/analytics")
+def feedback_analytics() -> dict:
+    from yokoten.db import VerifiedAnswer
+
+    with session() as s:
+        fbs = s.exec(select(Feedback)).all()
+        traces = {t.id: t for t in s.exec(select(Trace)).all()}
+        n_verified = len(s.exec(select(VerifiedAnswer.id)).all())
+    by_day: dict = defaultdict(lambda: {"up": 0, "down": 0})
+    by_intent: dict = defaultdict(lambda: {"up": 0, "down": 0})
+    conf = {"up": [], "down": []}
+    negative = []
+    for f in fbs:
+        key = "up" if f.rating > 0 else "down"
+        t = traces.get(f.trace_id)
+        by_day[f.created_at.date().isoformat()][key] += 1
+        if t:
+            by_intent[t.intent or "unknown"][key] += 1
+            if t.confidence is not None:
+                conf[key].append(t.confidence)
+            if key == "down":
+                negative.append(
+                    {
+                        "trace_id": t.id,
+                        "question": t.question,
+                        "answer": t.answer[:300],
+                        "comment": f.comment,
+                        "created_at": f.created_at.isoformat(),
+                    }
+                )
+    return {
+        "total": len(fbs),
+        "up": sum(1 for f in fbs if f.rating > 0),
+        "down": sum(1 for f in fbs if f.rating < 0),
+        "questions_answered": len(traces),
+        "abstained": sum(1 for t in traces.values() if t.abstained),
+        "verified_answers": n_verified,
+        "mean_confidence": {k: (sum(v) / len(v) if v else None) for k, v in conf.items()},
+        "by_day": [{"day": d, **v} for d, v in sorted(by_day.items())],
+        "by_intent": [{"intent": k, **v} for k, v in sorted(by_intent.items())],
+        "recent_negative": sorted(negative, key=lambda x: x["created_at"], reverse=True)[:10],
+    }

@@ -1,4 +1,4 @@
-import { API_URL, roleHeader } from "@/lib/api";
+import { API_URL, WAKING_UP, roleHeader } from "@/lib/api";
 
 /** POST a JSON body and read a text/event-stream response (EventSource only supports GET). */
 export async function postSSE(
@@ -7,12 +7,18 @@ export async function postSSE(
   onEvent: (event: string, data: unknown) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...roleHeader() },
-    body: JSON.stringify(body),
-    signal,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...roleHeader() },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw new Error(WAKING_UP);
+  }
   if (!res.ok || !res.body) {
     let detail = res.statusText;
     try {

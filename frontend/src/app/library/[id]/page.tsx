@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DownloadIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -71,7 +78,7 @@ function BeforeAfter({ base }: { base: string }) {
           className="absolute inset-0 block h-full w-full"
           style={{ clipPath: `inset(0 0 0 ${pos}%)` }}
         />
-        <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-primary" style={{ left: `${pos}%` }} />
+        <div className="bg-primary pointer-events-none absolute inset-y-0 w-0.5" style={{ left: `${pos}%` }} />
       </div>
       <input
         type="range"
@@ -79,7 +86,7 @@ function BeforeAfter({ base }: { base: string }) {
         max={100}
         value={pos}
         onChange={(e) => setPos(Number(e.target.value))}
-        className="w-full accent-primary"
+        className="accent-primary w-full"
         aria-label="Before / after position"
       />
     </div>
@@ -89,7 +96,7 @@ function BeforeAfter({ base }: { base: string }) {
 function Field({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="space-y-0.5">
-      <dt className="text-xs text-muted-foreground">{k}</dt>
+      <dt className="text-muted-foreground text-xs">{k}</dt>
       <dd className="text-sm break-words">{v ?? "—"}</dd>
     </div>
   );
@@ -122,8 +129,8 @@ export default function DocumentPage() {
   }, [pending, load]);
 
   const base = `${API_URL}/api/documents/${encodeURIComponent(revKey)}`;
-  if (error) return <p className="mx-auto max-w-7xl p-6 text-destructive">Could not load document: {error}</p>;
-  if (!data) return <Skeleton className="mx-auto m-6 h-[70vh] w-full max-w-7xl" />;
+  if (error) return <p className="text-destructive mx-auto max-w-7xl p-6">Could not load document: {error}</p>;
+  if (!data) return <Skeleton className="m-6 mx-auto h-[70vh] w-full max-w-7xl" />;
   const d = data.document;
   const extra = d.extra as {
     entities?: Record<string, string[]>;
@@ -155,7 +162,10 @@ export default function DocumentPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl flex-1 space-y-5 px-4 py-6">
-      <Link href="/library" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        href="/library"
+        className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
+      >
         <ArrowLeftIcon className="size-4" /> Library
       </Link>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -168,7 +178,7 @@ export default function DocumentPage() {
             <StatusBadge status={d.status} />
           </div>
           <h1 className="text-xl font-semibold tracking-tight">{d.title}</h1>
-          {d.error && <p className="text-sm text-destructive">{d.error}</p>}
+          {d.error && <p className="text-destructive text-sm">{d.error}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
@@ -187,7 +197,9 @@ export default function DocumentPage() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Delete {d.doc_id} Rev {d.revision}?</DialogTitle>
+                <DialogTitle>
+                  Delete {d.doc_id} Rev {d.revision}?
+                </DialogTitle>
                 <DialogDescription>Its chunks are removed from every index. This cannot be undone.</DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -229,10 +241,21 @@ export default function DocumentPage() {
             <Field k="Pages" v={d.n_pages} />
             <Field k="Supersedes" v={d.supersedes} />
             <Field k="Collection" v={d.collection} />
-            <Field k="Chunks per strategy" v={extra.chunks && Object.entries(extra.chunks).map(([k, n]) => `${k}: ${n}`).join(", ")} />
+            <Field
+              k="Chunks per strategy"
+              v={
+                extra.chunks &&
+                Object.entries(extra.chunks)
+                  .map(([k, n]) => `${k}: ${n}`)
+                  .join(", ")
+              }
+            />
             <Field
               k="Ingestion time"
-              v={extra.timings && `${extra.timings.total_s}s (parse ${extra.timings.parse_s}s, NER ${extra.timings.ner_s}s)`}
+              v={
+                extra.timings &&
+                `${extra.timings.total_s}s (parse ${extra.timings.parse_s}s, NER ${extra.timings.ner_s}s)`
+              }
             />
           </dl>
           <div className="space-y-2">
@@ -279,7 +302,12 @@ export default function DocumentPage() {
                 <span className="text-muted-foreground">
                   Page {page} of {d.n_pages}
                 </span>
-                <Button variant="outline" size="sm" disabled={page >= (d.n_pages ?? 1)} onClick={() => setPage(page + 1)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= (d.n_pages ?? 1)}
+                  onClick={() => setPage(page + 1)}
+                >
                   Next <ChevronRightIcon />
                 </Button>
               </div>
@@ -322,8 +350,11 @@ export default function DocumentPage() {
               </div>
               <div className="space-y-1.5">
                 <h3 className="text-sm font-medium">Recognised text</h3>
-                <pre className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap">
-                  {data.chunks.filter((c) => c.kind !== "parent").map((c) => c.text).join("\n")}
+                <pre className="bg-muted max-h-96 overflow-auto rounded-md p-3 text-xs whitespace-pre-wrap">
+                  {data.chunks
+                    .filter((c) => c.kind !== "parent")
+                    .map((c) => c.text)
+                    .join("\n")}
                 </pre>
               </div>
             </div>
@@ -349,7 +380,7 @@ export default function DocumentPage() {
           </div>
           {data.chunks.map((c) => (
             <div key={c.id} className={`rounded-md border p-3 ${c.kind === "parent" ? "bg-muted/40" : ""}`}>
-              <div className="mb-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <div className="text-muted-foreground mb-1 flex flex-wrap items-center gap-1.5 text-xs">
                 <Badge variant="outline">#{c.idx}</Badge>
                 <Badge variant="secondary">{c.kind}</Badge>
                 {c.section && <span>{c.section}</span>}
@@ -367,7 +398,7 @@ export default function DocumentPage() {
               <figure key={f.id} className="rounded-md border p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={`${API_URL}/api/figures/${encodeURIComponent(f.id)}`} alt={f.caption} className="w-full" />
-                <figcaption className="mt-1 text-xs text-muted-foreground">
+                <figcaption className="text-muted-foreground mt-1 text-xs">
                   Page {f.page} · {f.caption}
                 </figcaption>
               </figure>
@@ -397,7 +428,9 @@ export default function DocumentPage() {
                       <TableCell>{String(r.occurrence)}</TableCell>
                       <TableCell>{String(r.detection)}</TableCell>
                       <TableCell>
-                        <Badge variant={r.action_priority === "H" ? "destructive" : "secondary"}>{String(r.action_priority)}</Badge>
+                        <Badge variant={r.action_priority === "H" ? "destructive" : "secondary"}>
+                          {String(r.action_priority)}
+                        </Badge>
                       </TableCell>
                       <TableCell>{String(r.status)}</TableCell>
                       <TableCell>{r.revised_action_priority ? String(r.revised_action_priority) : "—"}</TableCell>

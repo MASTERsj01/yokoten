@@ -25,7 +25,8 @@ class Settings(BaseSettings):
     demo_mode: bool = False  # read-only + rate limited (public deployment)
     rate_limit_per_min: int = 20
     max_upload_mb: int = 20
-    ocr_engine: str = "auto"  # auto (tesseract if installed, else easyocr) | tesseract | easyocr
+    ocr_engine: str = "auto"
+    auto_ingest: bool = True  # generate + ingest the demo corpus on first start when the database is empty  # auto (tesseract if installed, else easyocr) | tesseract | easyocr
 
     @property
     def corpus_dir(self) -> Path:
@@ -69,6 +70,9 @@ class RuntimeConfig(BaseModel):
     abstain_threshold: float = 0.2  # min sigmoid(rerank score) of best chunk; calibrated on the dev split
     abstain_threshold_dense: float = 0.55  # used when the reranker is off (top cosine similarity)
     collections: list[str] = ["engineering"]
+    sql_route: bool = True  # analytical questions -> text-to-SQL (feature K)
+    use_verified: bool = True  # boost SME-verified answers (feature M)
+    verified_similarity: float = 0.88
 
 
 RUNTIME_FILE = settings.var_dir / "runtime.json"

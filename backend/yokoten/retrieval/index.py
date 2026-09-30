@@ -10,6 +10,10 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 import numpy as np
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from langchain_core.documents import Document as LCDocument
+from langchain_core.retrievers import BaseRetriever
+from pydantic import ConfigDict
 from rank_bm25 import BM25Okapi
 
 from yokoten.config import settings
@@ -328,3 +332,56 @@ def _get(strategy: str, model: str, version: str) -> Index:
 
 def get_index(strategy: str, model: str) -> Index:
     return _get(strategy, model, index_version())
+
+
+class HybridRetriever(BaseRetriever):
+    """The hybrid index as a LangChain retriever: documents carry chunk ids and dense / BM25 / RRF scores."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    index: Index
+    mode: str = "hybrid"
+    k: int = 30
+    filters: dict | None = None
+    store: str = "faiss"
+    faiss_kind: str = "flat"
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[LCDocument]:
+        hits = self.index.search(query, self.mode, self.k, self.filters, self.store, self.faiss_kind)
+        return [
+            LCDocument(
+                page_content=self.index.chunks[h.idx].text,
+                metadata={
+                    **h.meta,
+                    "chunk_id": h.chunk_id,
+                    "idx": h.idx,
+                    "dense": h.dense,
+                    "dense_rank": h.dense_rank,
+                    "bm25": h.bm25,
+                    "bm25_rank": h.bm25_rank,
+                    "fused": h.fused,
+                },
+            )
+            for h in hits
+        ]
+
+
+def hits_from_documents(docs: list[LCDocument]) -> list[Hit]:
+    return [
+        Hit(
+            d.metadata["idx"],
+            d.metadata["chunk_id"],
+            d.metadata["dense"],
+            d.metadata["dense_rank"],
+            d.metadata["bm25"],
+            d.metadata["bm25_rank"],
+            d.metadata["fused"],
+            meta={
+                k: v
+                for k, v in d.metadata.items()
+                if k not in ("idx", "chunk_id", "dense", "dense_rank", "bm25", "bm25_rank", "fused")
+            },
+        )
+        for d in docs
+    ]

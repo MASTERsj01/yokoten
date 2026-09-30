@@ -16,8 +16,10 @@ from yokoten.config import RuntimeConfig, load_runtime
 from yokoten.db import Chunk, Document, Trace, select, session
 from yokoten.domain import DEFAULT_ROLE, DOC_TYPE_LABEL, ROLE_ACCESS
 from yokoten.rag import llm, models
+from yokoten.rag import sql as sqlroute
+from yokoten.rag import verified as verified_mod
 from yokoten.rag.query import condense, expand, extract_filters, load_prompt
-from yokoten.retrieval.index import Hit, Index, get_index
+from yokoten.retrieval.index import Hit, HybridRetriever, Index, get_index, hits_from_documents
 
 ABSTAIN = "I could not find this in the knowledge base."
 FOLLOWUP = "follow-up questions:"
@@ -123,19 +125,19 @@ def retrieve(
     with steps.step(
         "retrieve", mode=cfg.retrieval_mode, store=cfg.vector_store, faiss=cfg.faiss_index
     ) as rec:
-        hits = index.search(
-            expanded,
-            cfg.retrieval_mode,
-            cfg.candidates,
-            {**base, **filters},
-            cfg.vector_store,
-            cfg.faiss_index,
+        retriever = HybridRetriever(
+            index=index,
+            mode=cfg.retrieval_mode,
+            k=cfg.candidates,
+            filters={**base, **filters},
+            store=cfg.vector_store,
+            faiss_kind=cfg.faiss_index,
         )
+        hits = hits_from_documents(retriever.invoke(expanded))
         relaxed = False
-        if not hits and filters:
-            hits = index.search(
-                expanded, cfg.retrieval_mode, cfg.candidates, base, cfg.vector_store, cfg.faiss_index
-            )
+        if not hits and filters:  # over-specific filters: retry with access filters only
+            retriever.filters = base
+            hits = hits_from_documents(retriever.invoke(expanded))
             relaxed = True
         rec.update(candidates=len(hits), filters_relaxed=relaxed)
     with steps.step("rerank", enabled=cfg.reranker) as rec:
@@ -173,7 +175,7 @@ def retrieve(
     )
 
 
-def build_context(r: Retrieval, cfg: RuntimeConfig) -> list[Source]:
+def build_context(r: Retrieval, cfg: RuntimeConfig, verified: dict | None = None) -> list[Source]:
     """Small-to-big (child -> parent section), dedup, revision awareness (add the latest revision when only a
     superseded one was retrieved), numbered passages."""
     index = r.index
@@ -249,6 +251,28 @@ def build_context(r: Retrieval, cfg: RuntimeConfig) -> list[Source]:
             )
         )
 
+    if verified:  # SME-verified answer to a near-identical question goes first
+        sources.append(
+            Source(
+                n=1,
+                chunk_id=f"verified:{verified['id']}",
+                doc_id=f"SME-VERIFIED-{verified['id']}",
+                rev_key="",
+                title=f"SME-{verified['status']} answer to: {verified['question']}",
+                doc_type="verified",
+                revision="-",
+                is_latest=True,
+                superseded_by=None,
+                format="verified",
+                page=None,
+                section="",
+                bboxes=[],
+                snippet=verified["answer"],
+                text=verified["answer"],
+                scores={"similarity": verified["similarity"]},
+            )
+        )
+        total += len(verified["answer"])
     for h, c, text in chosen:
         add(
             c,
@@ -264,6 +288,12 @@ def build_context(r: Retrieval, cfg: RuntimeConfig) -> list[Source]:
 def format_context(sources: list[Source]) -> str:
     blocks = []
     for s in sources:
+        if s.doc_type in ("verified", "sql"):
+            label = (
+                "SME-VERIFIED ANSWER (checked by a quality expert)" if s.doc_type == "verified" else s.title
+            )
+            blocks.append(f"[{s.n}] {label}\n{s.text}")
+            continue
         status = "LATEST" if s.is_latest else f"SUPERSEDED (see {s.superseded_by})"
         loc = f", page {s.page}" if s.page else ""
         sec = f", section '{s.section}'" if s.section else ""
@@ -344,6 +374,63 @@ def related_docs(r: Retrieval, n: int = 3) -> list[dict]:
     return out
 
 
+def _sql_source(info: dict) -> Source:
+    return Source(
+        n=1,
+        chunk_id="sql",
+        doc_id="SQL",
+        rev_key="",
+        title="Structured query over document metadata and FMEA tables",
+        doc_type="sql",
+        revision="-",
+        is_latest=True,
+        superseded_by=None,
+        format="sql",
+        page=None,
+        section="",
+        bboxes=[],
+        snippet=info["result_text"],
+        text=f"SQL: {info['query']}\nResult:\n{info['result_text']}",
+        scores={},
+    )
+
+
+def _stream_answer(messages, provider, model, call, steps, cfg) -> Iterator[dict]:
+    """Stream tokens, hiding the FOLLOW-UP QUESTIONS section. Returns (answer_text, followups) via StopIteration."""
+    followups: list[str] = []
+    with steps.step("generate", provider=provider, model=model, prompt_version=cfg.prompt_version) as rec:
+        buf, emitted, hidden = "", 0, False
+        for delta in llm.stream(messages, provider, model, call):
+            buf += delta
+            if hidden:
+                continue
+            pos = buf.lower().find(FOLLOWUP)
+            if pos >= 0:
+                hidden = True
+                if pos > emitted:
+                    yield {"event": "token", "data": {"text": buf[emitted:pos].rstrip()}}
+                emitted = pos
+                continue
+            safe = len(buf) - len(FOLLOWUP)
+            if safe > emitted:
+                yield {"event": "token", "data": {"text": buf[emitted:safe]}}
+                emitted = safe
+        if not hidden and len(buf) > emitted:
+            yield {"event": "token", "data": {"text": buf[emitted:]}}
+        pos = buf.lower().find(FOLLOWUP)
+        text = (buf[:pos] if pos >= 0 else buf).strip()
+        if pos >= 0:
+            followups = [ln.strip(" -*0123456789.").strip() for ln in buf[pos + len(FOLLOWUP) :].splitlines()]
+            followups = [f for f in followups if len(f) > 8][:3]
+        rec.update(
+            cached=call.cached,
+            input_tokens=call.input_tokens,
+            output_tokens=call.output_tokens,
+            first_token_ms=round(call.first_token_ms or 0, 1),
+        )
+    return text, followups
+
+
 def answer(
     question: str,
     history: list[dict] | None = None,
@@ -380,58 +467,55 @@ def answer(
         [],
         {"sentences": [], "faithfulness": None, "citation_precision": None},
     )
+    gate = r.gate
+    sql_info = None
+    if r.intent == "analytical" and cfg.sql_route:
+        with steps.step("sql", provider=provider, model=model) as rec:
+            sql_info = sqlroute.answer_rows(r.standalone, role, provider, model)
+            rec.update(**{k: v for k, v in sql_info.items() if k != "rows"})
+        if sql_info.get("rows"):
+            yield {"event": "sql", "data": sql_info}
+    verified = verified_mod.match(r.standalone, cfg) if cfg.use_verified and r.intent != "chitchat" else None
+    if verified:
+        yield {
+            "event": "verified",
+            "data": {k: verified[k] for k in ("id", "question", "status", "similarity")},
+        }
     if r.intent == "chitchat":
         text = (
             "Hello! I answer questions from Norvane's engineering record: 8D reports, lessons learned, FMEAs, test "
             "reports, design reviews, ECNs and supplier quality data. Try one of the example questions."
         )
         yield {"event": "token", "data": {"text": text}}
-    elif not r.passed_gate:
+    elif sql_info and sql_info.get("rows"):
+        sources = [_sql_source(sql_info)]
+        yield {"event": "sources", "data": [_source_public(s) for s in sources]}
+        messages = load_prompt("answer", cfg.prompt_version).format_messages(
+            context=format_context(sources), question=r.standalone
+        )
+        text, followups = yield from _stream_answer(messages, provider, model, call, steps, cfg)
+        with steps.step("verify", method="sql-consistency") as rec:
+            verification = sqlroute.check_answer(text, sql_info)
+            rec.update(faithfulness=verification["faithfulness"])
+        gate = 1.0
+    elif not r.passed_gate and not verified:
         text = ABSTAIN
         yield {"event": "token", "data": {"text": text}}
     else:
         with steps.step("context") as rec:
-            sources = build_context(r, cfg)
+            sources = build_context(r, cfg, verified)
             rec.update(
                 passages=len(sources),
                 chars=sum(len(s.text) for s in sources),
                 latest_added=sum(1 for s in sources if s.scores.get("added_for")),
+                verified_added=bool(verified),
             )
         yield {"event": "sources", "data": [_source_public(s) for s in sources]}
         prompt = load_prompt("answer", cfg.prompt_version)
         messages = prompt.format_messages(context=format_context(sources), question=r.standalone)
-        with steps.step("generate", provider=provider, model=model, prompt_version=cfg.prompt_version) as rec:
-            buf, emitted, hidden = "", 0, False
-            for delta in llm.stream(messages, provider, model, call):
-                buf += delta
-                if hidden:
-                    continue
-                pos = buf.lower().find(FOLLOWUP)
-                if pos >= 0:
-                    hidden = True
-                    if pos > emitted:
-                        yield {"event": "token", "data": {"text": buf[emitted:pos].rstrip()}}
-                    emitted = pos
-                    continue
-                safe = len(buf) - len(FOLLOWUP)
-                if safe > emitted:
-                    yield {"event": "token", "data": {"text": buf[emitted:safe]}}
-                    emitted = safe
-            if not hidden and len(buf) > emitted:
-                yield {"event": "token", "data": {"text": buf[emitted:]}}
-            pos = buf.lower().find(FOLLOWUP)
-            text = (buf[:pos] if pos >= 0 else buf).strip()
-            if pos >= 0:
-                followups = [
-                    ln.strip(" -*0123456789.").strip() for ln in buf[pos + len(FOLLOWUP) :].splitlines()
-                ]
-                followups = [f for f in followups if len(f) > 8][:3]
-            rec.update(
-                cached=call.cached,
-                input_tokens=call.input_tokens,
-                output_tokens=call.output_tokens,
-                first_token_ms=round(call.first_token_ms or 0, 1),
-            )
+        text, followups = yield from _stream_answer(messages, provider, model, call, steps, cfg)
+        if verified:
+            gate = max(gate, verified["similarity"])
         abstained_by_llm = ABSTAIN.lower().rstrip(".") in text.lower()
         if not abstained_by_llm:
             with steps.step("verify") as rec:
@@ -441,9 +525,7 @@ def answer(
                     citation_precision=verification["citation_precision"],
                 )
     abstained = text == ABSTAIN or ABSTAIN.lower().rstrip(".") in text.lower()
-    conf, label = (
-        confidence(r.gate, verification["faithfulness"]) if not abstained else (round(r.gate, 3), "n/a")
-    )
+    conf, label = confidence(gate, verification["faithfulness"]) if not abstained else (round(gate, 3), "n/a")
     cited = sorted({int(n) for n in _CITE.findall(text)})
     citations = [_source_public(s) for s in sources if s.n in cited]
     invalid = [n for n in cited if n > len(sources)]
@@ -463,6 +545,10 @@ def answer(
         "input_tokens": call.input_tokens,
         "output_tokens": call.output_tokens,
         "stages": {st["name"]: st["ms"] for st in steps},
+        "sql": sql_info if sql_info and sql_info.get("rows") else None,
+        "verified": {k: verified[k] for k in ("id", "question", "status", "similarity")}
+        if verified
+        else None,
     }
     if save:
         with session() as s:
@@ -492,6 +578,8 @@ def answer(
                         "filters_relaxed": r.filters_relaxed,
                         "intent_detail": r.intent_detail,
                         "retrieved": [_hit_row(h, r.index) for h in r.hits],
+                        "sql": sql_info,
+                        "verified": done["verified"],
                         "sources": [_source_public(s) for s in sources],
                         "citations": cited,
                         "invalid_citations": invalid,

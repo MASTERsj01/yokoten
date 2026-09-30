@@ -35,6 +35,9 @@ export type Verification = {
 
 export type Related = { doc_id: string; rev_key: string; title: string; doc_type: string; score: number };
 
+export type SqlResult = { query: string; columns: string[]; rows: (string | number | null)[][]; n_rows: number };
+export type VerifiedMatch = { id: number; question: string; status: string; similarity: number };
+
 export type Done = {
   trace_id: string;
   answer: string;
@@ -45,6 +48,8 @@ export type Done = {
   confidence: number;
   confidence_label: string;
   latency_ms: number;
+  sql?: SqlResult | null;
+  verified?: VerifiedMatch | null;
 };
 
 export type Meta = {

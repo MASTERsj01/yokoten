@@ -69,109 +69,104 @@ function ViewerBody({ target }: { target: ViewerTarget }) {
 
   return (
     <>
-            <SheetHeader className="border-b p-4 pr-12">
-              <div className="flex flex-wrap items-center gap-2">
-                {target.n != null && <Badge>Source {target.n}</Badge>}
-                <Badge variant="outline">{target.doc_id}</Badge>
-                <Badge variant="outline">Rev {target.revision}</Badge>
-                {target.is_latest ? (
-                  <Badge className="bg-emerald-600/15 text-emerald-700 dark:text-emerald-400">Latest</Badge>
-                ) : (
-                  <Badge variant="destructive">Superseded{target.superseded_by ? ` by ${target.superseded_by}` : ""}</Badge>
-                )}
-                {doc && <Badge variant="secondary">{doc.classification}</Badge>}
-              </div>
-              <SheetTitle className="text-base leading-snug">{target.title}</SheetTitle>
-              <SheetDescription>
-                {doc?.doc_type_label ?? "Document"}
-                {target.section ? ` · ${target.section}` : ""}
-                {target.page ? ` · page ${target.page}` : ""}
-              </SheetDescription>
-            </SheetHeader>
-            <div className="space-y-4 p-4">
-              {error && <p className="text-sm text-destructive">Could not load the document: {error}</p>}
-              {!detail && !error && <Skeleton className="h-96 w-full" />}
-              {imgSrc && (
-                <div className="space-y-2">
-                  {fmt === "pdf" && doc?.n_pages && doc.n_pages > 1 && (
-                    <div className="flex items-center justify-between text-sm">
-                      <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
-                        <ChevronLeftIcon /> Previous
-                      </Button>
-                      <span className="text-muted-foreground">
-                        Page {page} of {doc.n_pages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={page >= doc.n_pages}
-                        onClick={() => setPage(page + 1)}
-                      >
-                        Next <ChevronRightIcon />
-                      </Button>
-                    </div>
-                  )}
-                  {(fmt === "png" || fmt === "jpg") && (
-                    <div className="flex flex-wrap gap-1" role="tablist" aria-label="Image processing step">
-                      {STEPS.map((s) => (
-                        <Button
-                          key={s}
-                          size="xs"
-                          variant={s === step ? "default" : "outline"}
-                          onClick={() => setStep(s)}
-                          role="tab"
-                          aria-selected={s === step}
-                        >
-                          {s}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                  <div className="relative overflow-hidden rounded-md border bg-white">
-                    {loadedSrc !== imgSrc && <Skeleton className="absolute inset-0" />}
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={imgSrc}
-                      alt={`${target.doc_id} page ${page}`}
-                      className="w-full"
-                      onLoad={() => setLoadedSrc(imgSrc)}
-                    />
-                  </div>
-                </div>
-              )}
-              {figures.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="flex items-center gap-1.5 text-sm font-medium">
-                    <ImageIcon className="size-4" /> Figures on this page
-                  </h3>
-                  {figures.map((f) => (
-                    <figure key={f.id} className="rounded-md border p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={`${API_URL}/api/figures/${encodeURIComponent(f.id)}`} alt={f.caption} className="w-full" />
-                      <figcaption className="mt-1 text-xs text-muted-foreground">{f.caption}</figcaption>
-                    </figure>
-                  ))}
-                </div>
-              )}
-              <div className="space-y-1.5">
-                <h3 className="text-sm font-medium">Cited passage</h3>
-                <div className="max-h-72 overflow-y-auto rounded-md border bg-muted/40 p-3 text-sm whitespace-pre-wrap">
-                  {highlightPassage(target.text ?? target.snippet, target.snippet)}
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/library/${encodeURIComponent(target.rev_key)}`}>
-                    <ExternalLinkIcon /> Open in library
-                  </Link>
+      <SheetHeader className="border-b p-4 pr-12">
+        <div className="flex flex-wrap items-center gap-2">
+          {target.n != null && <Badge>Source {target.n}</Badge>}
+          <Badge variant="outline">{target.doc_id}</Badge>
+          <Badge variant="outline">Rev {target.revision}</Badge>
+          {target.is_latest ? (
+            <Badge className="bg-emerald-600/15 text-emerald-700 dark:text-emerald-400">Latest</Badge>
+          ) : (
+            <Badge variant="destructive">Superseded{target.superseded_by ? ` by ${target.superseded_by}` : ""}</Badge>
+          )}
+          {doc && <Badge variant="secondary">{doc.classification}</Badge>}
+        </div>
+        <SheetTitle className="text-base leading-snug">{target.title}</SheetTitle>
+        <SheetDescription>
+          {doc?.doc_type_label ?? "Document"}
+          {target.section ? ` · ${target.section}` : ""}
+          {target.page ? ` · page ${target.page}` : ""}
+        </SheetDescription>
+      </SheetHeader>
+      <div className="space-y-4 p-4">
+        {error && <p className="text-destructive text-sm">Could not load the document: {error}</p>}
+        {!detail && !error && <Skeleton className="h-96 w-full" />}
+        {imgSrc && (
+          <div className="space-y-2">
+            {fmt === "pdf" && doc?.n_pages && doc.n_pages > 1 && (
+              <div className="flex items-center justify-between text-sm">
+                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
+                  <ChevronLeftIcon /> Previous
                 </Button>
-                <Button asChild variant="outline" size="sm">
-                  <a href={`${base}/file`}>
-                    <DownloadIcon /> Original file
-                  </a>
+                <span className="text-muted-foreground">
+                  Page {page} of {doc.n_pages}
+                </span>
+                <Button variant="outline" size="sm" disabled={page >= doc.n_pages} onClick={() => setPage(page + 1)}>
+                  Next <ChevronRightIcon />
                 </Button>
               </div>
+            )}
+            {(fmt === "png" || fmt === "jpg") && (
+              <div className="flex flex-wrap gap-1" role="tablist" aria-label="Image processing step">
+                {STEPS.map((s) => (
+                  <Button
+                    key={s}
+                    size="xs"
+                    variant={s === step ? "default" : "outline"}
+                    onClick={() => setStep(s)}
+                    role="tab"
+                    aria-selected={s === step}
+                  >
+                    {s}
+                  </Button>
+                ))}
+              </div>
+            )}
+            <div className="relative overflow-hidden rounded-md border bg-white">
+              {loadedSrc !== imgSrc && <Skeleton className="absolute inset-0" />}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imgSrc}
+                alt={`${target.doc_id} page ${page}`}
+                className="w-full"
+                onLoad={() => setLoadedSrc(imgSrc)}
+              />
             </div>
+          </div>
+        )}
+        {figures.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="flex items-center gap-1.5 text-sm font-medium">
+              <ImageIcon className="size-4" /> Figures on this page
+            </h3>
+            {figures.map((f) => (
+              <figure key={f.id} className="rounded-md border p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`${API_URL}/api/figures/${encodeURIComponent(f.id)}`} alt={f.caption} className="w-full" />
+                <figcaption className="text-muted-foreground mt-1 text-xs">{f.caption}</figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
+        <div className="space-y-1.5">
+          <h3 className="text-sm font-medium">Cited passage</h3>
+          <div className="bg-muted/40 max-h-72 overflow-y-auto rounded-md border p-3 text-sm whitespace-pre-wrap">
+            {highlightPassage(target.text ?? target.snippet, target.snippet)}
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/library/${encodeURIComponent(target.rev_key)}`}>
+              <ExternalLinkIcon /> Open in library
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <a href={`${base}/file`}>
+              <DownloadIcon /> Original file
+            </a>
+          </Button>
+        </div>
+      </div>
     </>
   );
 }

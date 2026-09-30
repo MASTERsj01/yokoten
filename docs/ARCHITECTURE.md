@@ -100,3 +100,32 @@ tasks.ps1                task runner (setup, data, ingest, dev, test, lint, eval
 | P5b Public data | NHTSA recalls subset as a separate collection + small eval |
 | P6 Next-level | K text-to-SQL → N access control → M SME verification loop |
 | P7 Ship | docs/assets, one-command Docker run, deployment (after approval) |
+
+## Components as built
+
+| Module | Responsibility |
+|---|---|
+| `datagen/` | Seeded generator: 32 hand-written quality cases → 231 documents in 6 formats + `eval/golden.jsonl`; `public.py` converts NHTSA recalls into a second collection |
+| `ingest/loaders.py` | `EngineeringDocLoader(BaseLoader)`: layout elements with page + bbox (PyMuPDF text/figures, pdfplumber tables, python-docx, openpyxl rows, Markdown, OCR lines) |
+| `ingest/ocr.py` | OpenCV grayscale → fastNlMeans denoise → projection-profile deskew → adaptive threshold → Tesseract/EasyOCR; empty title-block cells re-read by the recogniser; field regexes |
+| `ingest/chunking.py` | fixed / recursive / structure / parent-child via LangChain splitters, keeping locations |
+| `ingest/entities.py` | regex (part numbers, projects, doc refs, lots), glossary (components, plants, doc types), HF NER organisations |
+| `ingest/pipeline.py` | SHA-256 incremental ingestion, FMEA rows → SQL table, revision `is_latest` flags, ingestion report |
+| `retrieval/embeddings.py` | Sentence Transformers with a per-model embedding cache |
+| `retrieval/index.py` | FAISS Flat/HNSW + Chroma + BM25 + RRF behind one `Index`; `HybridRetriever(BaseRetriever)` |
+| `rag/query.py` | versioned prompts → `ChatPromptTemplate`; condense (LCEL chain), glossary expansion, filter extraction |
+| `rag/models.py` | cross-encoder reranker, NLI entailment, zero-shot intent (HF pipeline) |
+| `rag/pipeline.py` | the answer flow with a timed trace; small-to-big, revision awareness, SME-verified sources, SQL route, NLI verification, confidence |
+| `rag/sql.py` | text-to-SQL: LLM writes one SELECT, executed read-only against role-filtered TEMP views, 3 s timeout |
+| `rag/verified.py` | SME-verified answers matched by embedding similarity and injected as a boosted source |
+| `rag/llm.py` | Groq / Gemini / Ollama / local HF chat models, SQLite response cache, throttling, LCEL `chain()` |
+| `rag/onboarding.py` | digest: issues, DFMEA priorities, lessons, must-read list, glossary + cited LLM brief |
+| `evaluation/` | metrics, greedy one-variable ablations on dev, gate calibration, generation metrics (+ judge), OCR field accuracy, report + README results |
+| `api.py` | REST + SSE; role header (`X-Role`), demo-mode rate limit and read-only switch, upload limits, first-start bootstrap |
+
+## Security notes
+- Retrieved text is data, not instructions: the answer prompt says so explicitly and passages are fenced as numbered context.
+- Uploads: extension allow-list, size limit (`MAX_UPLOAD_MB`), stored outside the web root under generated names.
+- Text-to-SQL: `mode=ro` SQLite connection, statement allow-list (single SELECT/WITH), role-filtered views, row cap, time limit.
+- Demo mode (`DEMO_MODE=true`): uploads, deletes, re-index, settings and verification are disabled; POSTs rate-limited per IP.
+- Secrets only in `.env`; the confidential brief files are gitignored.

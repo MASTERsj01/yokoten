@@ -34,17 +34,55 @@ const PIPELINE = [
 ];
 
 const FEATURES = [
-  { icon: BookOpenCheckIcon, title: "Cited answers", text: "Every sentence links to the page and passage it came from; the viewer highlights it." },
-  { icon: ShieldCheckIcon, title: "Knows when it doesn't know", text: "A calibrated relevance gate abstains instead of guessing, and shows the closest documents." },
-  { icon: FileSearchIcon, title: "Hybrid semantic search", text: "Dense embeddings + BM25 fused with RRF, cross-encoder reranking, facets, score breakdown." },
-  { icon: ScanTextIcon, title: "Scans and drawings", text: "OpenCV denoise, deskew and threshold before OCR; title-block fields become metadata." },
-  { icon: LayersIcon, title: "Revision aware", text: "Prefers the latest revision of a document and tells you when an older one said otherwise." },
-  { icon: GaugeIcon, title: "Measured, not claimed", text: "A golden set of 129 questions, ablations and hallucination checks - numbers on the Evaluation page." },
+  {
+    icon: BookOpenCheckIcon,
+    title: "Cited answers",
+    text: "Every sentence links to the page and passage it came from; the viewer highlights it.",
+  },
+  {
+    icon: ShieldCheckIcon,
+    title: "Knows when it doesn't know",
+    text: "A calibrated relevance gate abstains instead of guessing, and shows the closest documents.",
+  },
+  {
+    icon: FileSearchIcon,
+    title: "Hybrid semantic search",
+    text: "Dense embeddings + BM25 fused with RRF, cross-encoder reranking, facets, score breakdown.",
+  },
+  {
+    icon: ScanTextIcon,
+    title: "Scans and drawings",
+    text: "OpenCV denoise, deskew and threshold before OCR; title-block fields become metadata.",
+  },
+  {
+    icon: LayersIcon,
+    title: "Revision aware",
+    text: "Prefers the latest revision of a document and tells you when an older one said otherwise.",
+  },
+  {
+    icon: GaugeIcon,
+    title: "Measured, not claimed",
+    text: "A golden set of 129 questions, ablations and hallucination checks - numbers on the Evaluation page.",
+  },
 ];
 
 const STACK = [
-  "Python", "FastAPI", "LangChain", "Sentence Transformers", "Hugging Face Transformers", "FAISS", "ChromaDB", "BM25",
-  "OpenCV", "EasyOCR / Tesseract", "SQLite / SQLModel", "Groq · Gemini · Ollama", "Next.js", "TypeScript", "Tailwind", "shadcn/ui",
+  "Python",
+  "FastAPI",
+  "LangChain",
+  "Sentence Transformers",
+  "Hugging Face Transformers",
+  "FAISS",
+  "ChromaDB",
+  "BM25",
+  "OpenCV",
+  "EasyOCR / Tesseract",
+  "SQLite / SQLModel",
+  "Groq · Gemini · Ollama",
+  "Next.js",
+  "TypeScript",
+  "Tailwind",
+  "shadcn/ui",
 ];
 
 function fmt(h: Headline) {
@@ -66,13 +104,13 @@ export default function Home() {
 
   return (
     <div className="flex-1">
-      <section className="border-b bg-gradient-to-b from-primary/8 to-transparent">
+      <section className="from-primary/8 border-b bg-gradient-to-b to-transparent">
         <div className="mx-auto max-w-6xl space-y-6 px-4 py-20">
-          <p className="text-sm font-medium text-primary">横展 · Yokoten — spread the lesson sideways</p>
+          <p className="text-primary text-sm font-medium">横展 · Yokoten — spread the lesson sideways</p>
           <h1 className="max-w-3xl text-4xl font-semibold tracking-tight sm:text-5xl">
             New engineers find the lesson before they repeat the failure.
           </h1>
-          <p className="max-w-2xl text-lg text-muted-foreground">
+          <p className="text-muted-foreground max-w-2xl text-lg">
             An AI copilot over an automotive supplier&apos;s engineering record — 8D reports, lessons learned, FMEAs,
             test reports, design reviews, change notices, supplier quality data and scanned drawings. Natural-language
             questions, cited answers, measured accuracy.
@@ -95,7 +133,7 @@ export default function Home() {
 
       <section className="mx-auto grid max-w-6xl gap-8 px-4 py-16 md:grid-cols-2">
         <div className="space-y-3">
-          <h2 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">The problem</h2>
+          <h2 className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">The problem</h2>
           <p className="text-lg">
             Engineering knowledge lives in hundreds of reports, spreadsheets and scans. New engineers spend hours
             searching for past failures and the lessons behind them — and some lessons are only rediscovered after the
@@ -103,22 +141,22 @@ export default function Home() {
           </p>
         </div>
         <div className="space-y-3">
-          <h2 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">The approach</h2>
+          <h2 className="text-muted-foreground text-xs font-semibold tracking-widest uppercase">The approach</h2>
           <p className="text-lg">
             A retrieval-augmented chatbot that searches the whole record in natural language, answers only from the
-            documents, cites every claim, checks its own sentences for support and says so when the answer is not
-            there.
+            documents, cites every claim, checks its own sentences for support and says so when the answer is not there.
           </p>
         </div>
       </section>
 
-      <section className="border-y bg-muted/30">
+      <section className="bg-muted/30 border-y">
         <div className="mx-auto max-w-6xl space-y-6 px-4 py-16">
           <h2 className="text-2xl font-semibold tracking-tight">Measured on a 129-question golden set</h2>
-          {summary === null && <p className="text-sm text-muted-foreground">Loading evaluation results…</p>}
+          {summary === null && <p className="text-muted-foreground text-sm">Loading evaluation results…</p>}
           {summary === "none" && (
-            <p className="text-sm text-muted-foreground">
-              Not yet measured — run <code className="rounded bg-muted px-1">.\tasks.ps1 eval</code> to produce the numbers.
+            <p className="text-muted-foreground text-sm">
+              Not yet measured — run <code className="bg-muted rounded px-1">.\tasks.ps1 eval</code> to produce the
+              numbers.
             </p>
           )}
           {summary && summary !== "none" && (
@@ -128,13 +166,14 @@ export default function Home() {
                   <Card key={h.label} className="py-4" title={h.hint}>
                     <CardContent className="px-4">
                       <div className="text-2xl font-semibold tabular-nums">{fmt(h)}</div>
-                      <div className="text-sm text-muted-foreground">{h.label}</div>
+                      <div className="text-muted-foreground text-sm">{h.label}</div>
                     </CardContent>
                   </Card>
                 ))}
               </div>
-              <p className="text-xs text-muted-foreground">
-                {summary.split} split · {summary.config} · run {summary.run_id} ({new Date(summary.created_at).toLocaleDateString()})
+              <p className="text-muted-foreground text-xs">
+                {summary.split} split · {summary.config} · run {summary.run_id} (
+                {new Date(summary.created_at).toLocaleDateString()})
               </p>
             </>
           )}
@@ -146,32 +185,32 @@ export default function Home() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (
             <div key={f.title} className="space-y-2 rounded-lg border p-5">
-              <f.icon className="size-5 text-primary" />
+              <f.icon className="text-primary size-5" />
               <h3 className="font-medium">{f.title}</h3>
-              <p className="text-sm text-muted-foreground">{f.text}</p>
+              <p className="text-muted-foreground text-sm">{f.text}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="border-t bg-muted/30">
+      <section className="bg-muted/30 border-t">
         <div className="mx-auto max-w-6xl space-y-6 px-4 py-16">
           <h2 className="text-2xl font-semibold tracking-tight">Architecture: every step is visible in the trace</h2>
           <ol className="flex flex-wrap items-center gap-2 text-sm">
             {PIPELINE.map((p, i) => (
               <li key={p} className="flex items-center gap-2">
-                <span className="rounded-md border bg-background px-3 py-2 shadow-xs">
-                  <span className="mr-1.5 text-xs text-muted-foreground">{i + 1}</span>
+                <span className="bg-background rounded-md border px-3 py-2 shadow-xs">
+                  <span className="text-muted-foreground mr-1.5 text-xs">{i + 1}</span>
                   {p}
                 </span>
-                {i < PIPELINE.length - 1 && <ArrowRightIcon className="size-4 text-muted-foreground" aria-hidden />}
+                {i < PIPELINE.length - 1 && <ArrowRightIcon className="text-muted-foreground size-4" aria-hidden />}
               </li>
             ))}
           </ol>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            Ingestion parses PDF, Word, Excel, CSV, Markdown and images into layout elements with page coordinates,
-            runs OCR on scans, chunks four ways and indexes into FAISS (flat and HNSW), ChromaDB and BM25. Answers come
-            from Groq, Gemini, a local Ollama server or an in-process Hugging Face model.
+          <p className="text-muted-foreground max-w-3xl text-sm">
+            Ingestion parses PDF, Word, Excel, CSV, Markdown and images into layout elements with page coordinates, runs
+            OCR on scans, chunks four ways and indexes into FAISS (flat and HNSW), ChromaDB and BM25. Answers come from
+            Groq, Gemini, a local Ollama server or an in-process Hugging Face model.
           </p>
         </div>
       </section>
@@ -194,9 +233,9 @@ export default function Home() {
             </span>
           ))}
         </div>
-        <p className="pt-4 text-sm text-muted-foreground">
-          Built by Ashwani Yadav as a portfolio project for an AI chatbot for engineering knowledge management internship.
-          All documents describe a fictional supplier, Norvane Automotive Systems.
+        <p className="text-muted-foreground pt-4 text-sm">
+          Built by Ashwani Yadav as a portfolio project for an AI chatbot for engineering knowledge management
+          internship. All documents describe a fictional supplier, Norvane Automotive Systems.
           {github && (
             <>
               {" "}

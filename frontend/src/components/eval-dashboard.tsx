@@ -83,12 +83,12 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
           <Card key={h.label} className="py-4" title={h.hint}>
             <CardContent className="px-4">
               <div className="text-2xl font-semibold tabular-nums">{fmtHeadline(h)}</div>
-              <div className="text-sm text-muted-foreground">{h.label}</div>
+              <div className="text-muted-foreground text-sm">{h.label}</div>
             </CardContent>
           </Card>
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-muted-foreground text-xs">
         Run {run.run_id} · {new Date(run.created_at).toLocaleString()} · {run.split} split · {run.n_questions} questions
       </p>
 
@@ -103,7 +103,10 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
         </TabsList>
 
         <TabsContent value="retrieval" className="grid gap-4 pt-3 lg:grid-cols-2">
-          <ChartCard title="Retrieval quality by question category" desc="Recall@5 and MRR of the final (reranked) ranking">
+          <ChartCard
+            title="Retrieval quality by question category"
+            desc="Recall@5 and MRR of the final (reranked) ranking"
+          >
             <ResponsiveContainer>
               <BarChart data={cats} margin={{ left: -10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -148,7 +151,14 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
                 <CardContent className="space-y-3">
                   <div className="h-44">
                     <ResponsiveContainer>
-                      <BarChart data={rows.map((r) => ({ v: r.variant, "Recall@5": r.metrics["recall@5"], MRR: r.metrics.mrr }))} margin={{ left: -10 }}>
+                      <BarChart
+                        data={rows.map((r) => ({
+                          v: r.variant,
+                          "Recall@5": r.metrics["recall@5"],
+                          MRR: r.metrics.mrr,
+                        }))}
+                        margin={{ left: -10 }}
+                      >
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="v" tick={AXIS} />
                         <YAxis domain={[0, 1]} tick={AXIS} />
@@ -174,7 +184,7 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
                         <TableRow key={r.variant} className={r.chosen ? "bg-primary/5" : ""}>
                           <TableCell>
                             {r.variant} {r.chosen && <Badge variant="secondary">chosen</Badge>}
-                            {r.note && <div className="text-xs text-muted-foreground">{r.note}</div>}
+                            {r.note && <div className="text-muted-foreground text-xs">{r.note}</div>}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{pct(r.metrics["recall@5"])}</TableCell>
                           <TableCell className="text-right tabular-nums">{pct(r.metrics["recall@10"])}</TableCell>
@@ -193,7 +203,7 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
 
         <TabsContent value="generation" className="space-y-4 pt-3">
           {gen.length === 0 && (
-            <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            <p className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
               Generation metrics not yet measured. {run.generation.note}
             </p>
           )}
@@ -224,7 +234,7 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
                         <TableRow key={g.name}>
                           <TableCell>
                             <div className="font-medium">{g.name}</div>
-                            <div className="text-xs text-muted-foreground">
+                            <div className="text-muted-foreground text-xs">
                               {g.provider} · {g.model} · prompt {g.prompt_version} · n={g.n}
                             </div>
                           </TableCell>
@@ -334,7 +344,7 @@ export function EvalDashboard({ run }: { run: EvalRun }) {
         )}
 
         <TabsContent value="failures" className="space-y-3 pt-3">
-          {run.failures.length === 0 && <p className="text-sm text-muted-foreground">No failures recorded.</p>}
+          {run.failures.length === 0 && <p className="text-muted-foreground text-sm">No failures recorded.</p>}
           {run.failures.map((f) => (
             <Card key={f.id} className="gap-2 py-4">
               <CardContent className="space-y-1.5 px-4 text-sm">

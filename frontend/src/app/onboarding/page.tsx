@@ -8,7 +8,15 @@ import { AnswerText } from "@/components/answer-text";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { api } from "@/lib/api";
@@ -35,7 +43,11 @@ type Digest = {
   must_read: Ref[];
   glossary: { term: string; meaning: string; mentions: number }[];
 };
-type Summary = { text: string; sources: { n: number; doc_id: string; rev_key: string; title: string }[]; model: string | null };
+type Summary = {
+  text: string;
+  sources: { n: number; doc_id: string; rev_key: string; title: string }[];
+  model: string | null;
+};
 
 const docLink = (r: { rev_key: string; doc_id: string }) => (
   <Link href={`/library/${encodeURIComponent(r.rev_key)}`} className="text-primary hover:underline">
@@ -54,7 +66,9 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<Catalog>("/api/catalog").then(setCatalog).catch((e) => setError(e.message));
+    api<Catalog>("/api/catalog")
+      .then(setCatalog)
+      .catch((e) => setError(e.message));
   }, []);
 
   const body = () => (choice.startsWith("c:") ? { component: choice.slice(2) } : { product_line: choice.slice(2) });
@@ -91,7 +105,7 @@ export default function OnboardingPage() {
         <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight">
           <GraduationCapIcon className="size-6" /> Onboarding digest
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           New to a product? Get the recurring failure modes, the lessons the team learned the hard way, the documents to
           read first and the acronyms you will hear - all cited.
         </p>
@@ -124,11 +138,11 @@ export default function OnboardingPage() {
           {loading ? <Loader2Icon className="animate-spin" /> : <BookOpenIcon />} Build my brief
         </Button>
       </div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-destructive text-sm">{error}</p>}
       {loading && <Skeleton className="h-96" />}
 
       {!digest && !loading && (
-        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <p className="text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
           Choose a component or product line and build the brief.
         </p>
       )}
@@ -147,7 +161,7 @@ export default function OnboardingPage() {
             </CardHeader>
             <CardContent>
               {summarising && (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <p className="text-muted-foreground flex items-center gap-2 text-sm">
                   <Loader2Icon className="size-4 animate-spin" /> Writing the brief…
                 </p>
               )}
@@ -161,9 +175,11 @@ export default function OnboardingPage() {
                   }}
                 />
               )}
-              {summary && !summary.text && <p className="text-sm text-muted-foreground">Not enough material for a brief.</p>}
+              {summary && !summary.text && (
+                <p className="text-muted-foreground text-sm">Not enough material for a brief.</p>
+              )}
               {summary && summary.sources.length > 0 && (
-                <ol className="mt-4 space-y-0.5 text-xs text-muted-foreground">
+                <ol className="text-muted-foreground mt-4 space-y-0.5 text-xs">
                   {summary.sources.map((s) => (
                     <li key={s.n}>
                       [{s.n}] {s.doc_id} — {s.title}
@@ -193,13 +209,17 @@ export default function OnboardingPage() {
                   {digest.failure_modes.map((f, i) => (
                     <TableRow key={i}>
                       <TableCell className="max-w-48 whitespace-normal">{f.failure_mode}</TableCell>
-                      <TableCell className="max-w-56 whitespace-normal text-xs">{f.cause}</TableCell>
+                      <TableCell className="max-w-56 text-xs whitespace-normal">{f.cause}</TableCell>
                       <TableCell className="tabular-nums">
                         {f.severity}/{f.occurrence}/{f.detection}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={f.action_priority === "H" ? "destructive" : "secondary"}>{f.action_priority}</Badge>
-                        {f.revised_action_priority && <span className="ml-1 text-xs text-muted-foreground">→ {f.revised_action_priority}</span>}
+                        <Badge variant={f.action_priority === "H" ? "destructive" : "secondary"}>
+                          {f.action_priority}
+                        </Badge>
+                        {f.revised_action_priority && (
+                          <span className="text-muted-foreground ml-1 text-xs">→ {f.revised_action_priority}</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-xs">{f.doc_id}</TableCell>
                     </TableRow>
@@ -217,8 +237,8 @@ export default function OnboardingPage() {
               <ul className="space-y-2 text-sm">
                 {digest.must_read.map((r) => (
                   <li key={r.rev_key}>
-                    {docLink(r)} <span className="text-xs text-muted-foreground">{r.doc_type_label}</span>
-                    <div className="text-xs text-muted-foreground">{r.title}</div>
+                    {docLink(r)} <span className="text-muted-foreground text-xs">{r.doc_type_label}</span>
+                    <div className="text-muted-foreground text-xs">{r.title}</div>
                   </li>
                 ))}
               </ul>
@@ -232,7 +252,7 @@ export default function OnboardingPage() {
             <CardContent className="space-y-3">
               {digest.lessons.map((l) => (
                 <div key={l.rev_key} className="rounded-md border p-3 text-sm">
-                  <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <div className="text-muted-foreground mb-1 flex flex-wrap items-center gap-2 text-xs">
                     {docLink(l)} <span>{l.year}</span>
                   </div>
                   <p className="font-medium">{l.title.replace("Lesson learned: ", "")}</p>

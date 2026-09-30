@@ -3,6 +3,8 @@
 **/.next
 **/__pycache__
 var
+data/corpus
+data/public
 .env
 .git
 docs/PROJECT_BRIEF.md

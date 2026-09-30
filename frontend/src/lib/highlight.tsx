@@ -9,7 +9,7 @@ export function highlightTerms(text: string, terms: string[]): ReactNode[] {
   const re = new RegExp(`(${t.map(esc).join("|")})`, "gi");
   return text.split(re).map((part, i) =>
     i % 2 === 1 ? (
-      <mark key={i} className="rounded-sm bg-highlight px-0.5 text-foreground">
+      <mark key={i} className="bg-highlight text-foreground rounded-sm px-0.5">
         {part}
       </mark>
     ) : (
@@ -28,7 +28,7 @@ export function highlightPassage(text: string, passage: string): ReactNode[] {
   const end = Math.min(t.length, i + p.length);
   return [
     t.slice(0, i),
-    <mark key="m" className="rounded-sm bg-highlight px-0.5 text-foreground">
+    <mark key="m" className="bg-highlight text-foreground rounded-sm px-0.5">
       {t.slice(i, end)}
     </mark>,
     t.slice(end),

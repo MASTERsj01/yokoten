@@ -31,6 +31,8 @@ type Config = {
   abstain_threshold: number;
   abstain_threshold_dense: number;
   collections: string[];
+  sql_route: boolean;
+  use_verified: boolean;
 };
 type Options = {
   providers: Record<string, { available: boolean; default: string; models: string[] }>;
@@ -54,14 +56,24 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
     <div className="grid gap-1.5 sm:grid-cols-[14rem_1fr] sm:items-center">
       <div>
         <Label>{label}</Label>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
       </div>
       <div>{children}</div>
     </div>
   );
 }
 
-function Pick({ value, options, onChange, label }: { value: string; options: string[]; onChange: (v: string) => void; label: string }) {
+function Pick({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  label: string;
+}) {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger className="w-full sm:w-80" aria-label={label}>
@@ -92,7 +104,9 @@ export default function SettingsPage() {
         setOpts(r.options);
       })
       .catch((e) => setError(e.message));
-    api<{ device: string }>("/api/health").then((h) => setDevice(h.device)).catch(() => {});
+    api<{ device: string }>("/api/health")
+      .then((h) => setDevice(h.device))
+      .catch(() => {});
   }, []);
 
   const set = <K extends keyof Config>(k: K, v: Config[K]) => setCfg((c) => (c ? { ...c, [k]: v } : c));
@@ -110,8 +124,8 @@ export default function SettingsPage() {
     }
   }
 
-  if (error) return <p className="mx-auto max-w-4xl p-6 text-destructive">Could not load settings: {error}</p>;
-  if (!cfg || !opts) return <Skeleton className="mx-auto m-6 h-[70vh] w-full max-w-4xl" />;
+  if (error) return <p className="text-destructive mx-auto max-w-4xl p-6">Could not load settings: {error}</p>;
+  if (!cfg || !opts) return <Skeleton className="m-6 mx-auto h-[70vh] w-full max-w-4xl" />;
   const prov = opts.providers[cfg.llm_provider];
   const models = [...new Set([prov?.default, ...(prov?.models ?? [])].filter(Boolean))] as string[];
 
@@ -120,9 +134,14 @@ export default function SettingsPage() {
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             Switch models, stores and retrieval strategies to demo the trade-offs measured on the Evaluation page.
-            {device && <> Running on <Badge variant="outline">{device}</Badge>.</>}
+            {device && (
+              <>
+                {" "}
+                Running on <Badge variant="outline">{device}</Badge>.
+              </>
+            )}
           </p>
         </div>
         <Button onClick={save} disabled={saving}>
@@ -133,7 +152,9 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Language model</CardTitle>
-          <CardDescription>Unavailable providers fall back to the next available one (Groq → Gemini → Ollama → local).</CardDescription>
+          <CardDescription>
+            Unavailable providers fall back to the next available one (Groq → Gemini → Ollama → local).
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-2">
@@ -145,32 +166,50 @@ export default function SettingsPage() {
                   set("llm_provider", name);
                   set("llm_model", "");
                 }}
-                className={`rounded-md border p-3 text-left text-sm transition-colors hover:bg-accent ${
-                  cfg.llm_provider === name ? "border-primary ring-1 ring-primary" : ""
+                className={`hover:bg-accent rounded-md border p-3 text-left text-sm transition-colors ${
+                  cfg.llm_provider === name ? "border-primary ring-primary ring-1" : ""
                 }`}
               >
                 <div className="flex items-center gap-2 font-medium capitalize">
                   {p.available ? (
                     <CheckCircle2Icon className="size-4 text-emerald-600" />
                   ) : (
-                    <CircleDashedIcon className="size-4 text-muted-foreground" />
+                    <CircleDashedIcon className="text-muted-foreground size-4" />
                   )}
                   {name}
-                  <span className="text-xs font-normal text-muted-foreground">{p.available ? "available" : "not configured"}</span>
+                  <span className="text-muted-foreground text-xs font-normal">
+                    {p.available ? "available" : "not configured"}
+                  </span>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">{PROVIDER_HELP[name]}</p>
+                <p className="text-muted-foreground mt-1 text-xs">{PROVIDER_HELP[name]}</p>
               </button>
             ))}
           </div>
           <Row label="Model" hint="Empty = provider default">
             {models.length > 1 ? (
-              <Pick value={cfg.llm_model || prov.default} options={models} onChange={(v) => set("llm_model", v)} label="Model" />
+              <Pick
+                value={cfg.llm_model || prov.default}
+                options={models}
+                onChange={(v) => set("llm_model", v)}
+                label="Model"
+              />
             ) : (
-              <Input value={cfg.llm_model} placeholder={prov?.default} onChange={(e) => set("llm_model", e.target.value)} className="sm:w-80" aria-label="Model" />
+              <Input
+                value={cfg.llm_model}
+                placeholder={prov?.default}
+                onChange={(e) => set("llm_model", e.target.value)}
+                className="sm:w-80"
+                aria-label="Model"
+              />
             )}
           </Row>
           <Row label="Prompt version" hint="See backend/prompts/CHANGELOG.md">
-            <Pick value={cfg.prompt_version} options={opts.prompt_versions} onChange={(v) => set("prompt_version", v)} label="Prompt version" />
+            <Pick
+              value={cfg.prompt_version}
+              options={opts.prompt_versions}
+              onChange={(v) => set("prompt_version", v)}
+              label="Prompt version"
+            />
           </Row>
         </CardContent>
       </Card>
@@ -178,22 +217,44 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Retrieval</CardTitle>
-          <CardDescription>Embedding model and chunking changes build a new index on first use (cached afterwards).</CardDescription>
+          <CardDescription>
+            Embedding model and chunking changes build a new index on first use (cached afterwards).
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Row label="Retrieval mode">
-            <Pick value={cfg.retrieval_mode} options={opts.retrieval_modes} onChange={(v) => set("retrieval_mode", v)} label="Retrieval mode" />
+            <Pick
+              value={cfg.retrieval_mode}
+              options={opts.retrieval_modes}
+              onChange={(v) => set("retrieval_mode", v)}
+              label="Retrieval mode"
+            />
           </Row>
           <Row label="Vector store">
-            <Pick value={cfg.vector_store} options={opts.vector_stores} onChange={(v) => set("vector_store", v)} label="Vector store" />
+            <Pick
+              value={cfg.vector_store}
+              options={opts.vector_stores}
+              onChange={(v) => set("vector_store", v)}
+              label="Vector store"
+            />
           </Row>
           {cfg.vector_store === "faiss" && (
             <Row label="FAISS index" hint="Flat = exact; HNSW = approximate graph">
-              <Pick value={cfg.faiss_index} options={opts.faiss_index} onChange={(v) => set("faiss_index", v)} label="FAISS index" />
+              <Pick
+                value={cfg.faiss_index}
+                options={opts.faiss_index}
+                onChange={(v) => set("faiss_index", v)}
+                label="FAISS index"
+              />
             </Row>
           )}
           <Row label="Embedding model">
-            <Pick value={cfg.embedding_model} options={opts.embedding_models} onChange={(v) => set("embedding_model", v)} label="Embedding model" />
+            <Pick
+              value={cfg.embedding_model}
+              options={opts.embedding_models}
+              onChange={(v) => set("embedding_model", v)}
+              label="Embedding model"
+            />
           </Row>
           <Row label="Chunking">
             <Pick value={cfg.chunking} options={opts.chunking} onChange={(v) => set("chunking", v)} label="Chunking" />
@@ -202,18 +263,65 @@ export default function SettingsPage() {
             <Switch checked={cfg.reranker} onCheckedChange={(v) => set("reranker", v)} aria-label="Reranker" />
           </Row>
           <Row label="Query rewriting" hint="Condense follow-ups + glossary expansion">
-            <Switch checked={cfg.query_rewrite} onCheckedChange={(v) => set("query_rewrite", v)} aria-label="Query rewriting" />
+            <Switch
+              checked={cfg.query_rewrite}
+              onCheckedChange={(v) => set("query_rewrite", v)}
+              aria-label="Query rewriting"
+            />
           </Row>
           <Row label="Metadata filters" hint="Extract year / component / plant from the question">
-            <Switch checked={cfg.use_filters} onCheckedChange={(v) => set("use_filters", v)} aria-label="Metadata filters" />
+            <Switch
+              checked={cfg.use_filters}
+              onCheckedChange={(v) => set("use_filters", v)}
+              aria-label="Metadata filters"
+            />
+          </Row>
+          <Row
+            label="Include NHTSA public recalls"
+            hint="Real US recall campaigns (public domain), separate collection"
+          >
+            <Switch
+              checked={cfg.collections.includes("public_recalls")}
+              onCheckedChange={(v) => set("collections", v ? ["engineering", "public_recalls"] : ["engineering"])}
+              aria-label="Include public recalls"
+            />
+          </Row>
+          <Row label="Text-to-SQL for analytical questions" hint="Counts and rankings answered from structured tables">
+            <Switch checked={cfg.sql_route} onCheckedChange={(v) => set("sql_route", v)} aria-label="Text-to-SQL" />
+          </Row>
+          <Row label="Reuse SME-verified answers" hint="Boost expert-verified answers for similar questions">
+            <Switch
+              checked={cfg.use_verified}
+              onCheckedChange={(v) => set("use_verified", v)}
+              aria-label="Verified answers"
+            />
           </Row>
           <Row label={`Passages to the LLM (top-k): ${cfg.top_k}`}>
-            <Slider value={[cfg.top_k]} min={1} max={12} step={1} onValueChange={([v]) => set("top_k", v)} className="sm:w-80" aria-label="Top k" />
+            <Slider
+              value={[cfg.top_k]}
+              min={1}
+              max={12}
+              step={1}
+              onValueChange={([v]) => set("top_k", v)}
+              className="sm:w-80"
+              aria-label="Top k"
+            />
           </Row>
           <Row label={`Candidates retrieved: ${cfg.candidates}`}>
-            <Slider value={[cfg.candidates]} min={5} max={60} step={5} onValueChange={([v]) => set("candidates", v)} className="sm:w-80" aria-label="Candidates" />
+            <Slider
+              value={[cfg.candidates]}
+              min={5}
+              max={60}
+              step={5}
+              onValueChange={([v]) => set("candidates", v)}
+              className="sm:w-80"
+              aria-label="Candidates"
+            />
           </Row>
-          <Row label={`Abstain below relevance: ${cfg.abstain_threshold.toFixed(2)}`} hint="Calibrated on the dev split">
+          <Row
+            label={`Abstain below relevance: ${cfg.abstain_threshold.toFixed(2)}`}
+            hint="Calibrated on the dev split"
+          >
             <Slider
               value={[cfg.abstain_threshold]}
               min={0}

@@ -29,10 +29,10 @@ def condense(question: str, history: list[dict], provider: str | None, model: st
     if not history:
         return question, "none"
     if provider and model:
-        msgs = load_prompt("condense", "v1").format_messages(
-            history=format_history(history), question=question
+        out = llm.chain(load_prompt("condense", "v1"), provider, model, max_tokens=120).invoke(
+            {"history": format_history(history), "question": question}
         )
-        out = llm.invoke(msgs, provider, model, max_tokens=120).text.strip().strip('"')
+        out = out.strip().strip('"')
         if out:
             return out.splitlines()[0], f"llm:{provider}"
     last_user = next((h["content"] for h in reversed(history) if h["role"] == "user"), "")

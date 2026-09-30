@@ -1,7 +1,10 @@
 export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
     super(message);
   }
 }
@@ -12,15 +15,22 @@ function roleHeader(): Record<string, string> {
   return role ? { "X-Role": role } : {};
 }
 
+export const WAKING_UP = "The backend is waking up or offline (free hosting sleeps when idle) - try again in ~30 s.";
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers: {
-      ...(init.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
-      ...roleHeader(),
-      ...init.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        ...(init.body && !(init.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
+        ...roleHeader(),
+        ...init.headers,
+      },
+    });
+  } catch {
+    throw new ApiError(0, WAKING_UP);
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try {
