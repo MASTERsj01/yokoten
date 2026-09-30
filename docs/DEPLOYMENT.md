@@ -3,6 +3,17 @@
 Target: **frontend on Vercel**, **backend on a Hugging Face Space (Docker, free CPU)**, running in read-only demo mode
 with per-IP rate limits. Nothing here runs automatically - each step below is done by the repository owner.
 
+## 0. Free option in use — backend on this laptop, shared through a tunnel
+
+```powershell
+.\tasks.ps1 share            # or: .\tasks.ps1 share https://<your-site>.vercel.app
+```
+Starts a read-only (`DEMO_MODE=true`, rate-limited) backend on `:8001` and a Cloudflare quick tunnel to it (no
+account; `cloudflared` is downloaded to `var\bin` if missing), then prints and copies the link to share:
+`https://yokoten-eight.vercel.app/?api=https://<random>.trycloudflare.com`. The site keeps that backend for the tab;
+it only accepts `*.trycloudflare.com` hosts. The link works while the laptop and both minimized windows run; the
+tunnel URL changes on every start, so share the new link each time. For an always-on link, use section 1.
+
 ## 1. Backend — Hugging Face Space
 
 > Since 2026 Hugging Face requires a **PRO subscription** for Docker (and Gradio) Spaces, including on free CPU

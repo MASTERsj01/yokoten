@@ -30,11 +30,40 @@ switch ($Task) {
         Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "backend"
         Invoke-Npm run dev
     }
+    "share" {
+        # Public demo from this laptop: read-only backend on :8001 + Cloudflare quick tunnel (new URL every start).
+        $site = if ($Rest) { $Rest[0] } else { "https://yokoten-eight.vercel.app" }
+        $cf = (Get-Command cloudflared -ErrorAction SilentlyContinue).Source
+        if (-not $cf) {
+            $cf = Join-Path $Root "var\bin\cloudflared.exe"
+            if (-not (Test-Path $cf)) {
+                New-Item -ItemType Directory -Force (Split-Path $cf) | Out-Null
+                Invoke-WebRequest "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile $cf -UseBasicParsing
+            }
+        }
+        $log = Join-Path $Root "var\tunnel.log"
+        Remove-Item $log -ErrorAction SilentlyContinue
+        Start-Process powershell -WindowStyle Minimized -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "share-backend", $site
+        Start-Process $cf -WindowStyle Minimized -ArgumentList "tunnel", "--no-autoupdate", "--url", "http://localhost:8001", "--logfile", "`"$log`""
+        $url = $null
+        for ($i = 0; $i -lt 60 -and -not $url; $i++) {
+            Start-Sleep 2
+            if (Test-Path $log) { $url = ([regex]"https://[a-z0-9-]+\.trycloudflare\.com").Match((Get-Content $log -Raw)).Value }
+        }
+        if (-not $url) { throw "no tunnel URL after 2 min - see $log" }
+        $link = "$site/?api=$url"
+        Set-Clipboard $link
+        "Share this link (copied to clipboard; works while this laptop and both minimized windows run):`n  $link"
+    }
+    "share-backend" {
+        $env:DEMO_MODE = "true"; $env:CORS_ORIGINS = $Rest[0]
+        Invoke-Py uvicorn yokoten.api:app --port 8001
+    }
     "test" { Invoke-Py pytest -q @Rest }
     "lint" { Invoke-Py ruff check .; Invoke-Py ruff format --check .; Invoke-Npm run lint }
     "fmt" { Invoke-Py ruff check --fix .; Invoke-Py ruff format . }
     "build" { Invoke-Npm run build }
     default {
-        "Tasks: setup | data | ingest | public | ask ""question"" | eval | dev | backend | frontend | test | lint | fmt | build"
+        "Tasks: setup | data | ingest | public | ask ""question"" | eval | dev | backend | frontend | share [site] | test | lint | fmt | build"
     }
 }
