@@ -74,11 +74,11 @@ tasks.ps1                task runner (setup, data, ingest, dev, test, lint, eval
 |---|---|---|
 | API | FastAPI + native `EventSourceResponse` | typed REST + SSE streaming with OpenAPI docs for free |
 | Orchestration | LangChain (loaders, splitters, retriever, prompts, LCEL chains, chat models) | provider abstraction and standard interfaces; no LangGraph: the pipeline is linear |
-| Embeddings | Sentence Transformers `BAAI/bge-small-en-v1.5` (+ MiniLM-L6, bge-base in ablation) | strong quality for 33M params, CPU-friendly |
+| Embeddings | Sentence Transformers `BAAI/bge-small-en-v1.5` (+ MiniLM-L6, bge-base in ablation) | 33M params, CPU-friendly; the three models tie once the reranker re-orders the candidates |
 | Vector DB | FAISS (Flat / HNSW) and ChromaDB behind one interface | compare exact vs ANN vs a persisted DB with native metadata filters |
 | Lexical | rank-bm25 + Reciprocal Rank Fusion | part numbers and codes need exact-match recall |
 | Reranker | `cross-encoder/ms-marco-MiniLM-L6-v2` | big precision gain for ~20 ms per pair on CPU |
-| NLI / intent | HF Transformers `cross-encoder/nli-deberta-v3-xsmall` | one small model does both sentence faithfulness and zero-shot intent |
+| Faithfulness / intent | HF Transformers `cross-encoder/nli-deberta-v3-base` on the 3 closest source sentences + lexical/number support; same model for zero-shot intent | the checker is validated on labelled claims each eval run (xsmall accepted only 10% of true claims) |
 | NER | HF `dslim/distilbert-NER` + regex | supplier/org names from free text; regex for part numbers and project codes |
 | LLM | Groq (default), Gemini (fallback + judge), Ollama (local) | free tiers + an on-prem story; the judge is from a different family than the generator |
 | Parsing | PyMuPDF, pdfplumber, python-docx, openpyxl/pandas | page-level bounding boxes for citation highlights |

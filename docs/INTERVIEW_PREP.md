@@ -19,13 +19,16 @@ having to calibrate two score scales. In this corpus the reranker masks the diff
 dense-only diagnostic shows why you still want both stages when the corpus grows.
 
 ### 3. What did the ablations show?
-Query rewriting (condensing + glossary expansion) and metadata filters moved Recall@5 the most; the cross-encoder
-reranker improved MRR; embedding model, dense/BM25/hybrid and FAISS Flat vs HNSW vs Chroma made no difference to the
-final ranking once the reranker re-orders a 30-candidate pool. Fixed-size chunks beat the structure-aware and
-parent-child chunkers on dev. I tuned greedily, one variable at a time, on the dev split and report test numbers.
+Query rewriting (condensing + glossary expansion) was the biggest win: +8.2 pts Recall@5 (90.2% → 98.4%) and +9.4
+pts MRR on test. Metadata filters added +4.8 pts MRR, the cross-encoder reranker +1.0 pts MRR (at ~3x the retrieval
+latency on CPU). Embedding model, dense/BM25/hybrid and FAISS Flat vs HNSW vs Chroma made no difference to the final
+ranking once the reranker re-orders a 30-candidate pool - the dense-only diagnostic shows the first-stage differences
+(MiniLM MRR 0.85 vs bge-small 0.92). Fixed-size chunks won on dev. Tuned greedily, one variable at a time, on dev;
+test numbers reported.
 
 ### 4. How do you stop hallucinations?
-Four layers: the prompt allows only the numbered passages and demands a citation per sentence; a relevance gate
+Four layers (end result with a 1.5B local model: hallucination rate 28.9%, down from 35.1% with the v1 prompt): the
+prompt allows only the numbered passages and demands a citation per sentence; a relevance gate
 abstains when the best reranked passage is weak; the LLM is told to answer with a fixed "not in the knowledge base"
 sentence when the context is insufficient; and after generation an NLI model checks every sentence against the cited
 passages - unsupported sentences are underlined in the UI and lower the confidence score.
@@ -53,8 +56,8 @@ as a second, separately evaluated collection.
 OpenCV: grayscale → non-local-means denoise → deskew by searching the angle that maximises the variance of the
 horizontal projection profile → adaptive threshold → EasyOCR (Tesseract when installed). Title-block fields are parsed
 with regexes, with a domain O/0 repair inside codes. EasyOCR's detector drops isolated single characters, so empty cells
-next to a known label are re-read with the recogniser alone. Field accuracy per engine is in the report; the remaining
-misses are single-letter revisions and a few material codes.
+next to a known label are re-read with the recogniser alone. Field accuracy on the 18 scans is 86.4% with
+preprocessing vs 78.4% without; the remaining misses are single-letter revisions and a few material codes.
 
 ### 9. What is small-to-big retrieval and did it help?
 Index small child chunks for precise matching, give the LLM the parent section for context. It is implemented
@@ -76,7 +79,8 @@ new engineer cannot retrieve a restricted field-failure analysis or count confid
 ### 12. Is the text-to-SQL route safe?
 The model's output must be a single SELECT/WITH statement (allow-list plus keyword block-list), it runs on a
 read-only SQLite connection against role-filtered views, with a row cap and a time limit, and the SQL is shown in
-the trace. Answers are checked for consistency: every number in the answer must appear in the result table.
+the trace. Answers are checked for consistency: every number in the answer must appear in the result table. On the 8 counting
+questions it lifts correctness from 12.5% (passages only) to 62.5%.
 
 ### 13. Why LangChain, and where exactly?
 Loader interface (`BaseLoader`), text splitters, a `BaseRetriever` over the hybrid index, `ChatPromptTemplate` for
@@ -95,6 +99,9 @@ so nothing leaves the network. For scale: a GPU server with a 7-8B instruction m
 an ANN index once the corpus reaches millions of chunks (docs/FUTURE_WORK.md).
 
 ### 16. What were the hardest bugs?
+Measurement bugs were the most instructive: the first NLI checker accepted only 10% of known-true claims (fixed by
+validating the checker itself, focusing the premise and adding lexical/number support - now 88% / 97%), the sentence
+splitter detached "[1]" from its sentence, and the fact matcher scored "1.1x" as missing "1.1". Engineering bugs:
 A production Next.js server from an earlier build kept serving stale chunks (the page never hydrated) - found with a
 headless Chrome driver that captured console errors. Newer Chrome returns a Promise from `scrollIntoView`, which a
 concise arrow-function effect returned as its "cleanup" - React crashed with "destroy is not a function". DOCX/XLSX

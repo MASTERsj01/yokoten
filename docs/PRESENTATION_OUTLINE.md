@@ -18,10 +18,15 @@ limits. All numbers come from `docs/EVALUATION_REPORT.md` (same run as the READM
    verification; revision awareness; prompt-injection-aware prompt; role-based access (also enforced in SQL).
 6. **How it was evaluated** — metric definitions (Recall@k, MRR, nDCG, faithfulness, abstention, hallucination
    rate), dev/test split, greedy one-variable ablations, LLM-as-judge from a different model family when available.
-7. **Results** — headline table from the report + the ablation chart; call out which design choices moved the needle
-   and which did not (e.g. embedding model differences disappear behind the reranker).
-8. **Where it fails** — 3 real failure cases from the error analysis (OCR single-character fields, list questions
-   that need every document, small-model citation behaviour) and the fix for each.
+7. **Results** (run `20260930-050009`, test split) — Recall@5 98.4%, MRR 0.93; answer correctness 59.5% (naive RAG)
+   → 74.3% (tuned pipeline, same 1.5B local LLM); cited answers 5% → 74% with prompt v2; text-to-SQL 12.5% → 62.5% on
+   counting questions; OCR preprocessing 78.4% → 86.4% field accuracy. What moved the needle: query rewriting
+   (+8.2 pts Recall@5), metadata filters (+4.8 pts MRR), reranker (+1.0 pts MRR). What did not: embedding model,
+   dense vs BM25 vs hybrid, FAISS Flat vs HNSW vs Chroma - all tie once the reranker re-orders 30 candidates.
+8. **Where it fails** — hallucination rate 28.9% and abstention recall 50% with the 1.5B model (e.g. it invented a
+   "headlamp condensation" root cause when related radiator documents passed the gate); list questions miss one of
+   four documents; single-character OCR fields; and a lesson about measurement itself - the first faithfulness checker
+   accepted only 10% of true claims and the first abstention threshold was over-fitted to 8 dev examples.
 9. **Scaling inside a real company** — PLM/DMS connectors, SSO + document ACLs, on-prem GPU LLM, feedback → golden
    set, weekly regression eval (docs/FUTURE_WORK.md).
 10. **What I would do in the internship** — week-by-week: connect one real document source, build a 100-question

@@ -4,6 +4,10 @@ RAG chatbot + hybrid semantic search + evaluation harness over a synthetic Tier-
 Portfolio project. The spec lives in `docs/PROJECT_BRIEF.md` + `docs/SETUP_ANSWERS.md` (both **local-only, gitignored,
 confidential**: never commit them or quote the JD). The plan is in `docs/ARCHITECTURE.md`; status is in `PROGRESS.md`.
 
+## Status
+All phases P0-P7 done locally (see PROGRESS.md); remaining work is blocked on the user (BLOCKERS.md). Headline eval
+(run 20260930-050009, test split, local 1.5B LLM): Recall@5 98.4%, MRR 0.93, correctness 74.3%, faithfulness 74.1%.
+
 ## Working mode
 Autonomous: don't ask the user, don't wait between phases. Stop only for a missing secret, account creation / push /
 deploy, unapproved data downloads, or anything destructive outside C:\dev\yokoten. Log decisions in `docs/DECISIONS.md`,

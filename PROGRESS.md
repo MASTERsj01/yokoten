@@ -1,6 +1,6 @@
 # Progress
 
-Single source of truth for resuming. Current phase: **P7 Polish & ship**.
+Single source of truth for resuming. Current phase: **done locally** - remaining items need the user (BLOCKERS.md).
 
 - [x] Questions asked and answered (docs/SETUP_ANSWERS.md)
 - [x] Project folder, git init, local identity, .gitignore, .env / .env.example
@@ -13,10 +13,10 @@ Single source of truth for resuming. Current phase: **P7 Polish & ship**.
 - [x] P5 Evaluation — `yokoten eval` (ablations on dev, retention-constrained gate calibration, generation x3 configs, SQL on/off, validated faithfulness checker, uncached latency benchmark, OCR engines, public set) -> eval/results/latest.json, docs/EVALUATION_REPORT.md, README results, /eval dashboard. Headline (test): R@5 98.4%, MRR 93.2%, correctness 74.3%, faithfulness 74.1%, hallucination 28.9% (local 1.5B model).
 - [x] P5b NHTSA recalls — 1,500 campaigns in collection `public_recalls` (separate index), 20-question public eval (R@5 70%).
 - [x] P6 — K text-to-SQL (analytical correctness 62.5% vs 12.5% without), N role-based access (retrieval/search/library/SQL, header switcher), M SME verify/correct + boosting + feedback analytics; verified in Chrome.
-- [ ] P7 Polish & ship
+- [x] P7 Polish (local) — README (results from the run, keyword → code table), ARCHITECTURE, DECISIONS, EVALUATION_REPORT, DEMO_SCRIPT, PRESENTATION_OUTLINE, FUTURE_WORK, RESUME_BULLETS, INTERVIEW_PREP, DEPLOYMENT, LICENSE; Docker files + HF Space staging script (unverified: Docker not installed); deployment/push waiting for approval
 
 ## Next step
-P7: RESUME_BULLETS.md (numbers only from eval/results/latest.json), fill PRESENTATION_OUTLINE + INTERVIEW_PREP numbers, final README pass, CI config check, Docker (not installed -> BLOCKERS), final commit. Deployment + GitHub push need the user's approval (see docs/DEPLOYMENT.md).
+Waiting on the user (BLOCKERS.md): API keys → re-run `.	asks.ps1 eval --gen-limit 40 --provider groq`; Docker → verify `docker compose up --build`; GitHub repo + push; go-ahead for Vercel / HF Space deployment. Optional after that: J (CLIP visual similar-defect finder) as a stretch goal.
 
 ## Half-finished work
 None.
