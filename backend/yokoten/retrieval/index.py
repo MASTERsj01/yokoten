@@ -101,11 +101,19 @@ class Hit:
 
 
 class Index:
-    def __init__(self, strategy: str, model: str):
-        self.strategy, self.model = strategy, model
+    def __init__(self, strategy: str, model: str, collections: tuple[str, ...] = ("engineering",)):
+        """One index per (chunking, embedding model, set of collections) - like separate vector-DB collections."""
+        self.strategy, self.model, self.collections = strategy, model, tuple(sorted(collections))
         t0 = time.perf_counter()
         with session() as s:
-            docs = {d.rev_key: d for d in s.exec(select(Document).where(Document.status == "ready")).all()}
+            docs = {
+                d.rev_key: d
+                for d in s.exec(
+                    select(Document).where(
+                        Document.status == "ready", Document.collection.in_(self.collections)
+                    )
+                ).all()
+            }
             chunks = [
                 c
                 for c in s.exec(select(Chunk).where(Chunk.strategy == strategy, Chunk.kind != "parent")).all()
@@ -153,6 +161,13 @@ class Index:
         self._faiss: dict = {}
         self._chroma = None
 
+    @property
+    def key(self) -> str:
+        cols = (
+            "" if self.collections == ("engineering",) else "__" + "+".join(c[:6] for c in self.collections)
+        )
+        return f"{self.strategy}__{slug(self.model)}{cols}"
+
     @staticmethod
     def header(d: Document, c: Chunk) -> str:
         """Contextual chunk header: every chunk carries its document identity into the embedding and BM25."""
@@ -192,7 +207,7 @@ class Index:
             else:
                 ix = faiss.IndexFlatIP(d)
             ix.add(self.vecs)
-            path = settings.var_dir / "index" / f"{self.strategy}__{slug(self.model)}__{kind}.faiss"
+            path = settings.var_dir / "index" / f"{self.key}__{kind}.faiss"
             path.parent.mkdir(parents=True, exist_ok=True)
             faiss.write_index(ix, str(path))
             self.stats[f"faiss_{kind}_build_s"] = round(time.perf_counter() - t, 3)
@@ -208,7 +223,7 @@ class Index:
             client = chromadb.PersistentClient(
                 path=str(settings.var_dir / "chroma"), settings=chromadb.Settings(anonymized_telemetry=False)
             )
-            name = f"{self.strategy}-{slug(self.model)}".replace("_", "-")[:60]
+            name = self.key.replace("_", "-").replace("__", "-")[:60]
             col = client.get_or_create_collection(name, metadata={"hnsw:space": "cosine"})
             existing = set(col.get(include=[])["ids"])
             wanted = set(self.ids)
@@ -326,12 +341,12 @@ class Index:
 
 
 @lru_cache(maxsize=6)
-def _get(strategy: str, model: str, version: str) -> Index:
-    return Index(strategy, model)
+def _get(strategy: str, model: str, collections: tuple[str, ...], version: str) -> Index:
+    return Index(strategy, model, collections)
 
 
-def get_index(strategy: str, model: str) -> Index:
-    return _get(strategy, model, index_version())
+def get_index(strategy: str, model: str, collections=("engineering",)) -> Index:
+    return _get(strategy, model, tuple(sorted(collections)), index_version())
 
 
 class HybridRetriever(BaseRetriever):

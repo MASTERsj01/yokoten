@@ -297,7 +297,8 @@ def search(body: SearchIn, x_role: RoleHeader = None) -> dict:
 
     cfg = load_runtime()
     t0 = time.perf_counter()
-    index = get_index(cfg.chunking, cfg.embedding_model)
+    cols = body.filters.get("collection") or cfg.collections
+    index = get_index(cfg.chunking, cfg.embedding_model, cols if isinstance(cols, list) else [cols])
     filters = {k: v for k, v in body.filters.items() if v not in (None, "", [])}
     filters["classification"] = ROLE_ACCESS[role_of(x_role)]
     filters.setdefault("collection", cfg.collections)

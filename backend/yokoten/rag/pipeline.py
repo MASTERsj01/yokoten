@@ -120,7 +120,7 @@ def retrieve(
     with steps.step("intent") as rec:
         intent, detail = models.classify_intent(standalone)
         rec.update(intent=intent, **detail)
-    index = get_index(cfg.chunking, cfg.embedding_model)
+    index = get_index(cfg.chunking, cfg.embedding_model, cfg.collections)
     base = {"classification": ROLE_ACCESS.get(role, ROLE_ACCESS[DEFAULT_ROLE]), "collection": cfg.collections}
     with steps.step(
         "retrieve", mode=cfg.retrieval_mode, store=cfg.vector_store, faiss=cfg.faiss_index

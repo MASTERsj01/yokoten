@@ -97,12 +97,28 @@ def abstention_scores(pred: list[bool], gold: list[bool]) -> dict:
     return {"abstention_precision": precision, "abstention_recall": recall, "abstention_f1": f1}
 
 
-def best_threshold(scores: list[float], unanswerable: list[bool]) -> tuple[float, float]:
-    """Gate threshold maximising abstention F1 (abstain when score < threshold)."""
-    best = (0.0, -1.0)
-    for t in sorted({round(s, 4) for s in scores} | {0.0}):
-        cand = t + 1e-4
-        f1 = abstention_scores([s < cand for s in scores], unanswerable)["abstention_f1"]
-        if f1 > best[1]:
-            best = (cand, f1)
-    return round(best[0], 4), best[1]
+def calibrate_threshold(scores: list[float], unanswerable: list[bool], min_retention: float = 0.975) -> dict:
+    """Gate threshold (abstain when score < t). Wrongly refusing an answerable question is a hard failure while an
+    unanswerable one that passes still meets the prompt's own abstention rule, so: keep >= min_retention of the
+    answerable questions, maximise abstention on unanswerable ones, prefer higher retention, and put t in the middle
+    of the score gap (margin)."""
+    uniq = sorted(set(scores))
+    cands = [0.0] + [(a + b) / 2 for a, b in zip(uniq, uniq[1:], strict=False)] + [uniq[-1] + 1e-6]
+    n_ans = sum(not u for u in unanswerable) or 1
+    n_un = sum(unanswerable) or 1
+    best = None
+    for t in cands:
+        kept = sum(s >= t for s, u in zip(scores, unanswerable, strict=True) if not u) / n_ans
+        caught = sum(s < t for s, u in zip(scores, unanswerable, strict=True) if u) / n_un
+        if kept < min_retention:
+            continue
+        key = (caught, kept, -t)
+        if best is None or key > best[0]:
+            best = (key, t, kept, caught)
+    _, t, kept, caught = best
+    return {
+        "threshold": round(t, 4),
+        "answerable_retention": kept,
+        "unanswerable_recall": caught,
+        "min_retention": min_retention,
+    }

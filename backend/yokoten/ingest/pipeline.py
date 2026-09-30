@@ -309,7 +309,7 @@ def ingest_corpus(
     if processed or stale or force:
         bump_index_version()
     cfg = load_runtime()
-    index = get_index(cfg.chunking, cfg.embedding_model)
+    index = get_index(cfg.chunking, cfg.embedding_model, [collection])
     index.faiss_index("flat")
     index.chroma()
     report = build_report()

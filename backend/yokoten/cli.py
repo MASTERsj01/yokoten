@@ -28,7 +28,7 @@ def cmd_search(args):
     from yokoten.retrieval.index import get_index
 
     cfg = load_runtime()
-    index = get_index(args.chunking or cfg.chunking, cfg.embedding_model)
+    index = get_index(args.chunking or cfg.chunking, cfg.embedding_model, cfg.collections)
     for h in index.search(args.query, mode=args.mode, k=args.k, store=args.store):
         c = index.chunks[h.idx]
         print(f"{h.fused:.4f} dense={h.dense_rank} bm25={h.bm25_rank} {c.doc_id:18s} | {c.text[:110]!r}")

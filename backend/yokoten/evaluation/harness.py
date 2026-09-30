@@ -14,7 +14,7 @@ from yokoten.config import ROOT, RuntimeConfig, device, load_runtime, settings
 from yokoten.evaluation.metrics import (
     abstention_scores,
     aggregate,
-    best_threshold,
+    calibrate_threshold,
     doc_ranking,
     fact_present,
     fact_score,
@@ -109,6 +109,27 @@ ABLATIONS: list[tuple[str, list[tuple[str, dict]]]] = [
 ]
 
 
+def _cached_summary(cfg: RuntimeConfig, questions: list[dict]) -> dict:
+    """Retrieval summaries are cached per (config, question set, index version) so reruns only redo what changed."""
+    import hashlib
+
+    from yokoten.retrieval.index import index_version
+
+    key = hashlib.sha256(
+        json.dumps(
+            [cfg.model_dump(), [q["id"] for q in questions], index_version(), GOLDEN.stat().st_mtime],
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()[:24]
+    path = settings.var_dir / "eval_cache" / f"{key}.json"
+    if path.exists():
+        return json.loads(path.read_text("utf-8"))
+    summary = summarize_retrieval(run_retrieval(cfg, questions))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary), "utf-8")
+    return summary
+
+
 def run_ablations(
     base: RuntimeConfig, dev: list[dict], test: list[dict], log=print
 ) -> tuple[RuntimeConfig, list]:
@@ -120,8 +141,7 @@ def run_ablations(
         for name, update in variants:
             cfg = chosen.model_copy(update=update)
             t = time.perf_counter()
-            dev_s = summarize_retrieval(run_retrieval(cfg, dev))
-            test_s = summarize_retrieval(run_retrieval(cfg, test))
+            dev_s, test_s = _cached_summary(cfg, dev), _cached_summary(cfg, test)
             log(
                 f"  {group:17s} {name:22s} dev R@5={dev_s['overall']['recall@5']:.3f} MRR={dev_s['overall']['mrr']:.3f} "
                 f"| test R@5={test_s['overall']['recall@5']:.3f} ({time.perf_counter() - t:.0f}s)"
@@ -143,6 +163,20 @@ def run_ablations(
                     "dev": {**dev_s["overall"], "latency_p50_ms": dev_s["latency_p50_ms"]},
                 }
             )
+    # first-stage quality: embedding models without BM25 or reranking (the full pipeline hides their differences)
+    for m in EMBED_MODELS:
+        cfg = chosen.model_copy(update={"embedding_model": m, "retrieval_mode": "dense", "reranker": False})
+        dev_s, test_s = _cached_summary(cfg, dev), _cached_summary(cfg, test)
+        log(f"  {'dense_only_embed':17s} {m.split('/')[-1]:22s} test R@5={test_s['overall']['recall@5']:.3f}")
+        table.append(
+            {
+                "group": "embedding_dense_only",
+                "variant": m.split("/")[-1],
+                "chosen": m == chosen.embedding_model,
+                "metrics": {**test_s["overall"], "latency_p50_ms": test_s["latency_p50_ms"]},
+                "dev": {**dev_s["overall"], "latency_p50_ms": dev_s["latency_p50_ms"]},
+            }
+        )
     return chosen, table
 
 
@@ -427,11 +461,15 @@ def run(
 
     # 2. calibrate the abstention gate on dev (answerable vs unanswerable)
     dev_rows = run_retrieval(chosen, dev)
-    th, f1 = best_threshold(
+    cal = calibrate_threshold(
         [r["gate"] for r in dev_rows], [golden[r["id"]]["category"] == "unanswerable" for r in dev_rows]
     )
+    th = cal["threshold"]
     chosen = chosen.model_copy(update={"abstain_threshold": th})
-    log(f"abstention threshold (dev, max F1={f1:.3f}): {th}")
+    log(
+        f"abstention threshold (dev): {th} (answerable kept {cal['answerable_retention']:.3f}, "
+        f"unanswerable caught {cal['unanswerable_recall']:.3f})"
+    )
 
     # 3. final retrieval numbers on test with the chosen config
     test_rows = run_retrieval(chosen, test)
@@ -506,7 +544,7 @@ def run(
                 if k in ("context", "generate", "verify"):
                     stage_lat[k].append(v)
     latency = {k: {"p50": pct(v, 50), "p95": pct(v, 95)} for k, v in stage_lat.items() if k in STAGES}
-    index = get_index(chosen.chunking, chosen.embedding_model)
+    index = get_index(chosen.chunking, chosen.embedding_model, chosen.collections)
     index.faiss_index("flat")
     index.faiss_index("hnsw")
     index.chroma()
@@ -594,7 +632,7 @@ def run(
             **ret,
             "abstention_gate": ret_abst,
             "threshold": th,
-            "threshold_dev_f1": f1,
+            "calibration": cal,
             "ablations": ablations,
             "rows": test_rows,
         },

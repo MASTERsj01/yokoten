@@ -102,7 +102,7 @@ def _charts(run: dict) -> dict[str, str]:
 
 def _winners(abl: list[dict]) -> list[str]:
     lines = []
-    for g in dict.fromkeys(a["group"] for a in abl):
+    for g in dict.fromkeys(a["group"] for a in abl if not a["group"].endswith("_dense_only")):
         items = [a for a in abl if a["group"] == g]
         chosen = next(a for a in items if a["chosen"])
         worst = min(items, key=lambda a: a["dev"]["recall@5"] + a["dev"]["mrr"])
@@ -309,9 +309,16 @@ def write_report(run: dict, path: Path = DOCS / "EVALUATION_REPORT.md") -> Path:
     L += [
         "## 5. Abstention calibration",
         "",
-        f"The relevance gate abstains when the best reranked passage scores below a threshold. Calibrated on dev "
-        f"(maximising abstention F1): **{ret['threshold']}** (dev F1 {ret['threshold_dev_f1']:.3f}). On test the gate "
-        f"alone reaches abstention precision {_p(ab['abstention_precision'])} and recall {_p(ab['abstention_recall'])}.",
+        f"The relevance gate abstains when the best reranked passage scores below a threshold. A wrong refusal is a "
+        f"hard failure, while an unanswerable question that passes the gate still meets the prompt's own abstention "
+        f"rule, so the threshold is calibrated on dev to keep at least "
+        f"{_p(ret['calibration']['min_retention'])} of answerable questions and, within that, catch as many "
+        f"unanswerable ones as possible: **{ret['threshold']}** (dev: answerable kept "
+        f"{_p(ret['calibration']['answerable_retention'])}, unanswerable caught "
+        f"{_p(ret['calibration']['unanswerable_recall'])}). On test the gate alone reaches abstention precision "
+        f"{_p(ab['abstention_precision'])} and recall {_p(ab['abstention_recall'])}; the LLM's own abstention "
+        f"adds to this (section 6). Maximising abstention F1 instead chose 0.856 on dev, which would have refused "
+        f"7 answerable test questions scoring 0.50-0.83 - an example of over-fitting a threshold to 8 dev examples.",
         "",
     ]
     L += ["## 6. Generation", ""]

@@ -3,7 +3,7 @@ import pytest
 from yokoten.evaluation.harness import stratified
 from yokoten.evaluation.metrics import (
     abstention_scores,
-    best_threshold,
+    calibrate_threshold,
     doc_ranking,
     fact_present,
     fact_score,
@@ -37,8 +37,11 @@ def test_fact_matching():
 def test_abstention_and_threshold():
     s = abstention_scores([True, False, True], [True, False, False])
     assert s["abstention_precision"] == 0.5 and s["abstention_recall"] == 1.0
-    th, f1 = best_threshold([0.05, 0.1, 0.9, 0.8], [True, True, False, False])
-    assert 0.1 <= th < 0.8 and f1 == 1.0
+    c = calibrate_threshold([0.05, 0.1, 0.9, 0.8, 0.3], [True, True, False, False, False])
+    assert 0.1 < c["threshold"] < 0.3 and c["unanswerable_recall"] == 1.0 and c["answerable_retention"] == 1.0
+    # a near-miss unanswerable (0.85) must not push the gate above answerable questions
+    c = calibrate_threshold([0.05, 0.85, 0.9, 0.6, 0.95], [True, True, False, False, False])
+    assert c["threshold"] < 0.6
 
 
 def test_stratified_subset_covers_categories():
