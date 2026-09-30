@@ -1,5 +1,7 @@
 # Yokoten 横展 — AI knowledge copilot for engineering lessons learned
 
+[![CI](https://github.com/MASTERsj01/yokoten/actions/workflows/ci.yml/badge.svg)](https://github.com/MASTERsj01/yokoten/actions/workflows/ci.yml)
+
 **Ask an automotive supplier's engineering record a question in plain English and get a cited answer — or an honest
 "not in the knowledge base".** Hybrid semantic search, OCR for scanned drawings, an explainability trace for every
 answer, and an evaluation harness with real, reproducible numbers.
